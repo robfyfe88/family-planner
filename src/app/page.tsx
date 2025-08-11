@@ -7,40 +7,89 @@ import FamilyBudgetPlanner from "./family-tools/FamilyBudgetPlanner";
 export default function FamilyToolsPage() {
   const [tab, setTab] = useState<"nursery" | "leave" | "budget">("nursery");
 
+  const ids = {
+    nurseryBtn: "tab-nursery",
+    leaveBtn: "tab-leave",
+    budgetBtn: "tab-budget",
+    nurseryPanel: "panel-nursery",
+    leavePanel: "panel-leave",
+    budgetPanel: "panel-budget",
+  };
+
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
-      <header className="flex items-center justify-between gap-4">
-        <h1 className="text-3xl font-semibold">Family Planner</h1>
-        <nav className="inline-flex rounded-full border overflow-hidden" role="tablist" aria-label="Planner tabs">
-                    <button
-            role="tab"
-            aria-selected={tab === "budget"}
-            className={`px-4 py-2 text-sm ${tab === "budget" ? "bg-[var(--accent-4)] text-white" : ""}`}
-            onClick={() => setTab("budget")}
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+
+      <header className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
+        <h1 className="text-2xl sm:text-3xl font-semibold">Family Planner</h1>
+
+        <nav
+          role="tablist"
+          aria-label="Planner tabs"
+          className="
+            sm:static sticky top-0 z-30
+            -mx-4 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0
+            bg-[var(--background)]/80 backdrop-blur
+          "
+        >
+          <div
+            className="
+              w-full sm:w-auto
+              inline-flex gap-1 sm:gap-0
+              overflow-x-auto no-scrollbar
+              rounded-full border
+              p-1
+            "
           >
-            Family Budget
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "nursery"}
-            className={`px-4 py-2 text-sm ${tab === "nursery" ? "bg-[var(--accent-2)] text-white" : ""}`}
-            onClick={() => setTab("nursery")}
-          >
-            Nursery Costs
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "leave"}
-            className={`px-4 py-2 text-sm border-l ${tab === "leave" ? "bg-[var(--accent)] text-white" : ""}`}
-            onClick={() => setTab("leave")}
-          >
-            Annual Leave
-          </button>
+            <button
+              id={ids.budgetBtn}
+              role="tab"
+              aria-controls={ids.budgetPanel}
+              aria-selected={tab === "budget"}
+              className={`shrink-0 inline-flex items-center justify-center px-3 sm:px-4 py-2 rounded-full text-sm transition
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-4)]
+                ${tab === "budget" ? "bg-[var(--accent-4)] text-white" : "hover:bg-[var(--card-bg)]"}
+              `}
+              onClick={() => setTab("budget")}
+            >
+              Family Budget
+            </button>
+
+            <button
+              id={ids.nurseryBtn}
+              role="tab"
+              aria-controls={ids.nurseryPanel}
+              aria-selected={tab === "nursery"}
+              className={`shrink-0 inline-flex items-center justify-center px-3 sm:px-4 py-2 rounded-full text-sm transition
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-2)]
+                ${tab === "nursery" ? "bg-[var(--accent-2)] text-white" : "hover:bg-[var(--card-bg)]"}
+              `}
+              onClick={() => setTab("nursery")}
+            >
+              Nursery Costs
+            </button>
+
+            <button
+              id={ids.leaveBtn}
+              role="tab"
+              aria-controls={ids.leavePanel}
+              aria-selected={tab === "leave"}
+              className={`shrink-0 inline-flex items-center justify-center px-3 sm:px-4 py-2 rounded-full text-sm transition
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
+                ${tab === "leave" ? "bg-[var(--accent)] text-white" : "hover:bg-[var(--card-bg)]"}
+              `}
+              onClick={() => setTab("leave")}
+            >
+              Annual Leave
+            </button>
+          </div>
         </nav>
       </header>
 
+      {/* Panels stay mounted (hidden on mobile) so state is preserved */}
       <div
+        id={ids.nurseryPanel}
         role="tabpanel"
+        aria-labelledby={ids.nurseryBtn}
         aria-hidden={tab !== "nursery"}
         className={tab === "nursery" ? "block" : "hidden"}
       >
@@ -50,15 +99,19 @@ export default function FamilyToolsPage() {
       </div>
 
       <div
+        id={ids.leavePanel}
         role="tabpanel"
+        aria-labelledby={ids.leaveBtn}
         aria-hidden={tab !== "leave"}
         className={tab === "leave" ? "block" : "hidden"}
       >
         <AnnualLeavePlanner />
       </div>
 
-            <div
+      <div
+        id={ids.budgetPanel}
         role="tabpanel"
+        aria-labelledby={ids.budgetBtn}
         aria-hidden={tab !== "budget"}
         className={tab === "budget" ? "block" : "hidden"}
       >

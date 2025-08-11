@@ -354,7 +354,6 @@ export default function FamilyBudgetPlanner() {
                       <button
                         className="px-2 py-1 rounded-lg border hover:bg-gray-50"
                         onClick={() => removePot(p.id)}
-                        title="Remove pot"
                         aria-label={`Remove ${p.name}`}
                       >
                         🗑️
@@ -441,7 +440,6 @@ function PotsCardsMobile({
               <button
                 className="px-2 py-1 rounded-lg border hover:bg-gray-50"
                 onClick={() => removePot(p.id)}
-                title="Remove pot"
                 aria-label={`Remove ${p.name}`}
               >
                 🗑️
@@ -599,7 +597,6 @@ function BudgetEditorCompact({
                 onClick={() => onRemove(r.id)}
               >
                 <span aria-hidden>🗑️</span>
-                <span className="text-sm">Remove</span>
               </button>
             </div>
           </div>
@@ -712,11 +709,9 @@ function CompactRow({
         <button
           className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border opacity-0 group-hover:opacity-100 transition"
           onClick={onRemove}
-          title="Remove"
           aria-label="Remove row"
         >
           <span aria-hidden>🗑️</span>
-          <span className="text-xs">Remove</span>
         </button>
       </td>
     </tr>
