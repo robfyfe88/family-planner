@@ -1,0 +1,677 @@
+"use client";
+import React, { useMemo, useState } from "react";
+
+type TimeStr = `${number}:${number}`;
+type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri";
+type YearMode = "FULL_YEAR" | "TERM_TIME";
+
+interface Rates {
+  am: number;
+  pm: number;
+  day: number;
+  hourly: number;
+}
+
+interface Sessions {
+  amStart: TimeStr;
+  amEnd: TimeStr;
+  pmStart: TimeStr;
+  pmEnd: TimeStr;
+  fullDayHours: number;
+  hourlyRoundingMinutes: number;
+  sessionTriggerMinutes: number;
+}
+
+interface DayPlan {
+  start?: TimeStr;
+  end?: TimeStr;
+}
+type WeekPlan = Record<DayKey, DayPlan>;
+
+interface ChildProfile {
+  id: string;
+  name: string;
+  ageYears: number;
+  week: WeekPlan;
+  tfcMonthlyCap: number;
+  rates: Rates;
+  sessions: Sessions;
+}
+
+/** ---------------- Helpers ---------------- */
+const dayKeys: DayKey[] = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const emptyWeek: WeekPlan = { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} };
+
+function parseTimeToMinutes(t?: TimeStr): number | null {
+  if (!t) return null;
+  const [h, m] = t.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+function minutesBetween(start?: TimeStr, end?: TimeStr): number {
+  const s = parseTimeToMinutes(start);
+  const e = parseTimeToMinutes(end);
+  if (s == null || e == null) return 0;
+  if (e <= s) return 0;
+  return e - s;
+}
+function overlapMinutes(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  const start = Math.max(aStart, bStart);
+  const end = Math.min(aEnd, bEnd);
+  return Math.max(0, end - start);
+}
+function roundUpMinutes(mins: number, increment: number): number {
+  if (increment <= 1) return mins;
+  return Math.ceil(mins / increment) * increment;
+}
+function gbp(n: number): string {
+  return n.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
+}
+function uid() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return Math.random().toString(36).slice(2);
+}
+
+function calcWeekForChild(
+  week: WeekPlan,
+  rates: Rates,
+  sessions: Sessions
+): {
+  perDay: { day: DayKey; hours: number; pricingApplied: string; cost: number }[];
+  weeklyTotal: number;
+  attendedMinutes: number;
+} {
+  const amS = parseTimeToMinutes(sessions.amStart)!;
+  const amE = parseTimeToMinutes(sessions.amEnd)!;
+  const pmS = parseTimeToMinutes(sessions.pmStart)!;
+  const pmE = parseTimeToMinutes(sessions.pmEnd)!;
+
+  let attendedMinutes = 0;
+
+  const perDay = dayKeys.map((day) => {
+    const plan = week[day] || {};
+    const mins = minutesBetween(plan.start, plan.end);
+    const hrs = mins / 60;
+    attendedMinutes += mins;
+
+    if (mins <= 0) {
+      return { day, hours: 0, pricingApplied: "—", cost: 0 };
+    }
+
+    const s = parseTimeToMinutes(plan.start)!;
+    const e = parseTimeToMinutes(plan.end)!;
+
+    let amOverlap = overlapMinutes(s, e, amS, amE);
+    let pmOverlap = overlapMinutes(s, e, pmS, pmE);
+
+    if (amOverlap < sessions.sessionTriggerMinutes) amOverlap = 0;
+    if (pmOverlap < sessions.sessionTriggerMinutes) pmOverlap = 0;
+
+    const hourlyCostFor = (minutes: number) => {
+      const rounded = roundUpMinutes(minutes, sessions.hourlyRoundingMinutes);
+      return (rounded / 60) * rates.hourly;
+    };
+
+    const candHourly = { label: "Hourly", cost: Math.round(hourlyCostFor(mins) * 100) / 100 };
+
+    let sessionsOnlyCost = 0;
+    const sessionParts: string[] = [];
+    if (amOverlap > 0) {
+      sessionsOnlyCost += rates.am;
+      sessionParts.push("AM");
+    }
+    if (pmOverlap > 0) {
+      sessionsOnlyCost += rates.pm;
+      sessionParts.push("PM");
+    }
+    const candSessionsOnly = {
+      label: sessionParts.length ? `${sessionParts.join("+")} session${sessionParts.length > 1 ? "s" : ""}` : "Hourly",
+      cost: sessionParts.length ? Math.round(sessionsOnlyCost * 100) / 100 : Math.round(hourlyCostFor(mins) * 100) / 100,
+    };
+
+    // Candidate C: AM session + hourly edges (time outside AM)
+    let candAmPlusHourly = { label: "AM session + hourly", cost: Number.POSITIVE_INFINITY };
+    if (amOverlap > 0) {
+      const extraBeforeAM = s < amS ? amS - s : 0;
+      const extraAfterAM = e > amE ? e - Math.max(s, amE) : 0;
+      const amPlusHourlyCost = rates.am + hourlyCostFor(extraBeforeAM + extraAfterAM);
+      candAmPlusHourly = { label: "AM session + hourly", cost: Math.round(amPlusHourlyCost * 100) / 100 };
+    }
+
+    // Candidate D: PM session + hourly edges
+    let candPmPlusHourly = { label: "PM session + hourly", cost: Number.POSITIVE_INFINITY };
+    if (pmOverlap > 0) {
+      const extraBeforePM = s < pmS ? pmS - s : 0;
+      const extraAfterPM = e > pmE ? e - Math.max(s, pmE) : 0;
+      const pmPlusHourlyCost = rates.pm + hourlyCostFor(extraBeforePM + extraAfterPM);
+      candPmPlusHourly = { label: "PM session + hourly", cost: Math.round(pmPlusHourlyCost * 100) / 100 };
+    }
+
+    // Candidate E: AM+PM sessions + hourly edges (early/late outside both)
+    let candBothSessionsPlusEdges = { label: "AM+PM sessions", cost: Number.POSITIVE_INFINITY };
+    if (amOverlap > 0 && pmOverlap > 0) {
+      const extraBeforeAM = s < amS ? amS - s : 0;
+      const extraAfterPM = e > pmE ? e - Math.max(s, pmE) : 0;
+      const bothSessionsCost = rates.am + rates.pm + hourlyCostFor(extraBeforeAM + extraAfterPM);
+      candBothSessionsPlusEdges = { label: "AM+PM sessions", cost: Math.round(bothSessionsCost * 100) / 100 };
+    }
+
+    // Candidate F: Day rate (if long enough or both sessions touched)
+    const dayRateEligible = (amOverlap > 0 && pmOverlap > 0) || hrs >= sessions.fullDayHours;
+    const candDayRate = { label: "Day rate", cost: dayRateEligible ? Math.round(rates.day * 100) / 100 : Number.POSITIVE_INFINITY };
+
+    // Pick the cheapest
+    const candidates = [candHourly, candSessionsOnly, candAmPlusHourly, candPmPlusHourly, candBothSessionsPlusEdges, candDayRate];
+    const best = candidates.reduce((min, c) => (c.cost < min.cost ? c : min), { label: "Hourly", cost: Number.POSITIVE_INFINITY });
+
+    return {
+      day,
+      hours: Math.round(hrs * 100) / 100,
+      pricingApplied: best.label,
+      cost: best.cost,
+    };
+  });
+
+  const weeklyTotal = Math.round(perDay.reduce((s, d) => s + d.cost, 0) * 100) / 100;
+  return { perDay, weeklyTotal, attendedMinutes };
+}
+
+/** ---------------- Page ---------------- */
+export default function NurseryPlannerPage() {
+  // Global year mode + term weeks
+  const [yearMode, setYearMode] = useState<YearMode>("FULL_YEAR");
+  const [termWeeks, setTermWeeks] = useState<number>(38); // configurable
+
+  // Tabs
+  const [activeChildId, setActiveChildId] = useState<string>("");
+
+  // Children: per-child rates and sessions
+  const defaultRates: Rates = { am: 28, pm: 28, day: 55, hourly: 7.5 };
+  const defaultSessions: Sessions = {
+    amStart: "08:00",
+    amEnd: "12:30",
+    pmStart: "13:00",
+    pmEnd: "18:00",
+    fullDayHours: 8.5,
+    hourlyRoundingMinutes: 15,
+    sessionTriggerMinutes: 60,
+  };
+
+  const [children, setChildren] = useState<ChildProfile[]>([
+    {
+      id: uid(),
+      name: "Child 1",
+      ageYears: 3,
+      week: structuredClone(emptyWeek),
+      tfcMonthlyCap: 166.67,
+      rates: { ...defaultRates },
+      sessions: { ...defaultSessions },
+    },
+  ]);
+
+  React.useEffect(() => {
+    if (!activeChildId && children.length) setActiveChildId(children[0].id);
+  }, [children, activeChildId]);
+
+  const addChild = () => {
+    const id = uid();
+    setChildren((prev) => [
+      ...prev,
+      {
+        id,
+        name: `Child ${prev.length + 1}`,
+        ageYears: 3,
+        week: structuredClone(emptyWeek),
+        tfcMonthlyCap: 166.67,
+        rates: { ...defaultRates },
+        sessions: { ...defaultSessions },
+      },
+    ]);
+    setActiveChildId(id);
+  };
+  const removeChild = (id: string) => {
+    setChildren((prev) => prev.filter((c) => c.id !== id));
+    if (activeChildId === id) {
+      const remaining = children.filter((c) => c.id !== id);
+      setActiveChildId(remaining[0]?.id ?? "");
+    }
+  };
+  const updateChild = (id: string, patch: Partial<ChildProfile>) =>
+    setChildren((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+
+  // Conversion factors
+  const factors = useMemo(() => {
+    const weeksPerYear = yearMode === "FULL_YEAR" ? 50 : termWeeks; // still 50 for full-year
+    const monthlyDivisor = yearMode === "TERM_TIME" ? 11 : 12;      // NEW: term time billed over 11 months
+    const monthlyFactor = weeksPerYear / monthlyDivisor;
+    return { weeksPerYear, monthlyDivisor, monthlyFactor };
+  }, [yearMode, termWeeks]);
+
+
+  // Results (per child, using each child’s own rates/sessions)
+  const results = useMemo(() => {
+    const perChild = children.map((child) => {
+      const weekCalc = calcWeekForChild(child.week, child.rates, child.sessions);
+
+      // --- Funded hours rule ---
+      const fundedHoursPerWeek = child.ageYears >= 3 ? (yearMode === "FULL_YEAR" ? 22.8 : 30) : 0;
+
+      const attendedHours = weekCalc.attendedMinutes / 60;
+      const weeklyCost = weekCalc.weeklyTotal;
+
+      // Only fund hours actually attended
+      const fundedHoursApplied = Math.min(attendedHours, fundedHoursPerWeek);
+
+      // Average effective price actually paid this week across all attended hours
+      const avgEffectiveRate = attendedHours > 0 ? weeklyCost / attendedHours : 0;
+
+      // Don’t credit more per hour than either the hourly rate OR what you effectively paid
+      const creditRatePerHour = Math.min(child.rates.hourly, avgEffectiveRate);
+
+      // Funding credit, capped to the weekly bill
+      let weeklyFundingCredit = Math.round(fundedHoursApplied * creditRatePerHour * 100) / 100;
+      weeklyFundingCredit = Math.min(weeklyFundingCredit, weeklyCost);
+
+      const weeklyAfterFunding = Math.max(0, Math.round((weeklyCost - weeklyFundingCredit) * 100) / 100);
+
+      // Monthly (50 weeks for Full Year, or termWeeks) → factor already set elsewhere
+      const monthlyInvoice = Math.round(weeklyAfterFunding * factors.monthlyFactor * 100) / 100;
+
+      // TFC (post-funding)
+      const tfcTopUp = Math.min(monthlyInvoice * 0.2, child.tfcMonthlyCap);
+      const parentNet = Math.max(0, monthlyInvoice - tfcTopUp);
+
+      return {
+        id: child.id,
+        name: child.name,
+        perDay: weekCalc.perDay,
+        weeklyTotalBeforeFunding: weeklyCost,
+        attendedHours: Math.round(attendedHours * 100) / 100,
+        fundedHoursPerWeek,
+        weeklyFundingCredit,
+        weeklyAfterFunding,
+        monthlyInvoice,
+        tfcTopUp: Math.round(tfcTopUp * 100) / 100,
+        parentNet: Math.round(parentNet * 100) / 100,
+      };
+    });
+
+    const familyMonthlyInvoice = Math.round(perChild.reduce((s, c) => s + c.monthlyInvoice, 0) * 100) / 100;
+    const familyTfcTopUp = Math.round(perChild.reduce((s, c) => s + c.tfcTopUp, 0) * 100) / 100;
+    const familyParentNet = Math.round(perChild.reduce((s, c) => s + c.parentNet, 0) * 100) / 100;
+
+    return { perChild, familyMonthlyInvoice, familyTfcTopUp, familyParentNet };
+  }, [children, factors, yearMode]);
+
+  const activeChild = children.find((c) => c.id === activeChildId);
+  const activeCalc = results.perChild.find((c) => c.id === activeChildId);
+
+  return (
+    <div className="max-w-6xl mx-auto p-6 space-y-8">
+      {/* Header */}
+      <header className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold">Nursery Cost Planner</h1>
+          <p className="text-sm opacity-80">
+            Per-child rates & sessions, accurate funding, and monthly totals — switch between Full Year and Term Time.
+          </p>
+        </div>
+        <YearModeToggle yearMode={yearMode} setYearMode={setYearMode} />
+      </header>
+
+      {/* Term weeks */}
+      {yearMode === "TERM_TIME" && (
+        <div className="card flex items-end gap-4">
+          <NumberField
+            label="Term weeks per year"
+            value={termWeeks}
+            step={1}
+            onChange={setTermWeeks}
+            hint="Typical Scotland: ~38 weeks"
+          />
+          <span className="badge badge-yellow">Term time</span>
+        </div>
+      )}
+
+      {/* Tabs header */}
+      <section className="card">
+        <div className="flex items-center gap-2 flex-wrap border-b pb-2">
+          {children.map((child) => (
+            <button
+              key={child.id}
+              onClick={() => setActiveChildId(child.id)}
+              className={`px-4 py-2 rounded-t-lg border ${activeChildId === child.id ? "bg-white font-semibold" : "bg-gray-100"
+                }`}
+            >
+              {child.name}
+            </button>
+          ))}
+          <button
+            onClick={addChild}
+            className="ml-auto px-4 py-2 rounded-full border hover:bg-[var(--accent-3)] hover:bg-opacity-20"
+          >
+            + Add child
+          </button>
+        </div>
+
+        {/* Active child content */}
+        {activeChild ? (
+          <div className="space-y-6 pt-4">
+            {/* Child meta controls */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  className="border rounded-xl px-3 py-2"
+                  value={activeChild.name}
+                  onChange={(e) => updateChild(activeChild.id, { name: e.target.value })}
+                />
+                <NumberField
+                  label="Age (years)"
+                  value={activeChild.ageYears}
+                  step={1}
+                  onChange={(v) => updateChild(activeChild.id, { ageYears: v })}
+                  hint="Funding kicks in at age 3+"
+                />
+                <NumberField
+                  label="TFC cap (£/mo)"
+                  value={activeChild.tfcMonthlyCap}
+                  step={0.01}
+                  onChange={(v) => updateChild(activeChild.id, { tfcMonthlyCap: v })}
+                />
+              </div>
+              {children.length > 1 && (
+                <button
+                  onClick={() => removeChild(activeChild.id)}
+                  className="px-3 py-2 rounded-full border text-red-600 hover:bg-red-50"
+                  aria-label={`Remove ${activeChild.name}`}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+
+            {/* Rates (per child) */}
+            <section className="card">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-medium">Rates for {activeChild.name}</h2>
+                <span className="badge badge-teal">Provider</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <NumberField
+                  label="AM rate (£)"
+                  value={activeChild.rates.am}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, am: v } })}
+                />
+                <NumberField
+                  label="PM rate (£)"
+                  value={activeChild.rates.pm}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, pm: v } })}
+                />
+                <NumberField
+                  label="Day rate (£)"
+                  value={activeChild.rates.day}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, day: v } })}
+                />
+                <NumberField
+                  label="Hourly rate (£)"
+                  value={activeChild.rates.hourly}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, hourly: v } })}
+                />
+                <NumberField
+                  label="Full-day threshold (hrs)"
+                  value={activeChild.sessions.fullDayHours}
+                  step={0.25}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, fullDayHours: v } })}
+                />
+              </div>
+            </section>
+
+            {/* Sessions (per child) */}
+            <section className="card">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-medium">Session windows & rules</h2>
+                <span className="badge badge-pink">Timetable</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-4">
+                <TimeField
+                  label="AM start"
+                  value={activeChild.sessions.amStart}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amStart: v } })}
+                />
+                <TimeField
+                  label="AM end"
+                  value={activeChild.sessions.amEnd}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amEnd: v } })}
+                />
+                <TimeField
+                  label="PM start"
+                  value={activeChild.sessions.pmStart}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmStart: v } })}
+                />
+                <TimeField
+                  label="PM end"
+                  value={activeChild.sessions.pmEnd}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmEnd: v } })}
+                />
+                <NumberField
+                  label="Hourly rounding (mins)"
+                  value={activeChild.sessions.hourlyRoundingMinutes}
+                  step={1}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, hourlyRoundingMinutes: v } })}
+                />
+                <NumberField
+                  label="Session trigger (mins)"
+                  value={activeChild.sessions.sessionTriggerMinutes}
+                  step={5}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, sessionTriggerMinutes: v } })}
+                  hint="Min overlap to count a session; smaller overlaps billed hourly."
+                />
+                <div className="self-end text-sm opacity-70">Hourly is rounded up to the nearest increment.</div>
+              </div>
+            </section>
+
+            {/* Weekly timetable (per child) */}
+            <section className="card">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium">Weekly timetable</div>
+                <button
+                  className="text-sm px-3 py-1.5 rounded-full border hover:bg-gray-50"
+                  onClick={() => {
+                    const mon = activeChild.week.Mon;
+                    if (!mon.start || !mon.end) return;
+                    updateChild(activeChild.id, {
+                      week: { Mon: { ...mon }, Tue: { ...mon }, Wed: { ...mon }, Thu: { ...mon }, Fri: { ...mon } },
+                    });
+                  }}
+                >
+                  Copy Monday to all
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                {dayKeys.map((d) => (
+                  <div key={d} className="p-3 border rounded-xl space-y-2">
+                    <div className="font-semibold">{d}</div>
+                    <TimeField
+                      label="Start"
+                      value={activeChild.week[d].start || ""}
+                      onChange={(v) =>
+                        updateChild(activeChild.id, { week: { ...activeChild.week, [d]: { ...activeChild.week[d], start: v } } })
+                      }
+                    />
+                    <TimeField
+                      label="End"
+                      value={activeChild.week[d].end || ""}
+                      onChange={(v) =>
+                        updateChild(activeChild.id, { week: { ...activeChild.week, [d]: { ...activeChild.week[d], end: v } } })
+                      }
+                    />
+                    <button
+                      className="text-xs text-red-600 underline"
+                      onClick={() => updateChild(activeChild.id, { week: { ...activeChild.week, [d]: {} } })}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Per-child results */}
+            {activeCalc && (
+              <section className="card">
+                <div className="overflow-auto">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr>
+                        <th>Day</th>
+                        <th className="text-right">Hours</th>
+                        <th>Pricing</th>
+                        <th className="text-right">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeCalc.perDay.map((r) => (
+                        <tr key={r.day}>
+                          <td>{r.day}</td>
+                          <td className="text-right">{r.hours.toFixed(2)}</td>
+                          <td>{r.pricingApplied ?? "—"}</td>
+                          <td className="text-right">{gbp(r.cost ?? 0)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td colSpan={3} className="font-semibold">Weekly total (before funding)</td>
+                        <td className="text-right font-semibold">{gbp(activeCalc.weeklyTotalBeforeFunding)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid sm:grid-cols-4 gap-4 pt-3">
+                  <Stat label="Attended hours (weekly)" value={`${activeCalc.attendedHours.toFixed(2)} h`} />
+                  <Stat label="Funded hours (weekly)" value={`${activeCalc.fundedHoursPerWeek} h`} />
+                  <Stat label="Funding credit (weekly)" value={`- ${gbp(activeCalc.weeklyFundingCredit)}`} />
+                  <Stat
+                    label={`Estimated monthly (${yearMode === "FULL_YEAR"
+                      ? "50 w/yr ÷ 12"
+                      : `${termWeeks} w/yr ÷ 11`})`}
+                    value={gbp(activeCalc.monthlyInvoice)}
+                  />
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4 pt-2">
+                  <Stat label="TFC top-up (20%, capped)" value={`- ${gbp(activeCalc.tfcTopUp)}`} />
+                  <Stat label="Parent net monthly" value={gbp(activeCalc.parentNet)} />
+                </div>
+                <p className="text-xs opacity-70 mt-2">
+                  Funding rule: {activeChild.ageYears >= 3 ? (yearMode === "FULL_YEAR" ? "22.8 hrs/week (stretched)" : "30 hrs/week (term time)") : "0 hrs/week (under 3)"}.
+                </p>
+              </section>
+            )}
+          </div>
+        ) : (
+          <div className="pt-4 text-sm opacity-75">Add a child to get started.</div>
+        )}
+      </section>
+
+      {/* Family summary */}
+      <section className="card">
+        <h2 className="text-lg font-medium mb-3">Family totals</h2>
+        <div className="grid sm:grid-cols-3 gap-4">
+          <Stat label="Combined monthly invoice" value={gbp(results.familyMonthlyInvoice)} />
+          <Stat label="Combined TFC top-up" value={`- ${gbp(results.familyTfcTopUp)}`} />
+          <Stat label="Combined parent net monthly" value={gbp(results.familyParentNet)} />
+        </div>
+        <p className="text-xs opacity-70 mt-3">
+          Monthly = weekly (after funding) × (
+          {yearMode === "FULL_YEAR" ? "50 ÷ 12" : `${termWeeks} ÷ 11`}
+          ). TFC applies after funding.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+/** ---------------- UI bits ---------------- */
+function NumberField({
+  label,
+  value,
+  onChange,
+  step = 0.5,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+  hint?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-sm">{label}</span>
+      <input
+        type="number"
+        step={step}
+        value={Number.isFinite(value) ? value : 0}
+        onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
+        className="px-3 py-2"
+      />
+      {hint ? <span className="text-xs opacity-70">{hint}</span> : null}
+    </label>
+  );
+}
+
+function TimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: TimeStr) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-sm">{label}</span>
+      <input
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value as TimeStr)}
+        className="px-3 py-2"
+      />
+    </label>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-3 border rounded-2xl bg-[var(--card-bg)]">
+      <div className="text-xs opacity-70">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function YearModeToggle({
+  yearMode,
+  setYearMode,
+}: {
+  yearMode: YearMode;
+  setYearMode: (m: YearMode) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-full border overflow-hidden">
+      <button
+        className={`px-4 py-2 text-sm ${yearMode === "FULL_YEAR" ? "bg-[var(--accent-2)] text-white" : ""}`}
+        onClick={() => setYearMode("FULL_YEAR")}
+      >
+        Full Year
+      </button>
+      <button
+        className={`px-4 py-2 text-sm border-l ${yearMode === "TERM_TIME" ? "bg-[var(--accent)] text-white" : ""}`}
+        onClick={() => setYearMode("TERM_TIME")}
+      >
+        Term Time
+      </button>
+    </div>
+  );
+}
