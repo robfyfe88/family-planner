@@ -1,5 +1,17 @@
 "use client";
+
 import React, { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /** ---------------- Types ---------------- */
 type TimeStr = `${number}:${number}`;
@@ -52,6 +64,18 @@ function uid() {
   return (typeof crypto !== "undefined" && "randomUUID" in crypto)
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
+}
+
+/** Select-all + no accidental wheel/arrow increments for number inputs */
+function useNumberInputUX() {
+  return {
+    onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.currentTarget.select(),
+    onMouseUp: (e: React.MouseEvent<HTMLInputElement>) => e.preventDefault(),
+    onWheel: (e: React.WheelEvent<HTMLInputElement>) => (e.target as HTMLInputElement).blur(),
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+    },
+  };
 }
 
 function calcWeekForChild(
@@ -364,7 +388,7 @@ export default function NurseryPlannerPage() {
       } catch (e) {
         console.warn("Nursery persist failed:", e);
       }
-    }, 100);
+    }, 120);
     return () => window.clearTimeout(id);
   }, [loaded, yearMode, termWeeks, activeChildId, children]);
 
@@ -388,9 +412,8 @@ export default function NurseryPlannerPage() {
             Per-child rates & sessions, accurate funding, and monthly totals — switch between Full Year and Term Time.
           </p>
         </div>
-        <div className="sm:self-auto self-start">
-          <YearModeToggle yearMode={yearMode} setYearMode={setYearMode} />
-        </div>
+
+        <YearModeToggle yearMode={yearMode} setYearMode={setYearMode} />
       </header>
 
       {/* Term weeks */}
@@ -403,7 +426,7 @@ export default function NurseryPlannerPage() {
             onChange={setTermWeeks}
             hint="Typical Scotland: ~38 weeks"
           />
-          <span className="badge badge-yellow self-start sm:self-auto">Term time</span>
+          <span className="badge badge-yellow self-start sm:self-auto text-center">Term time</span>
         </div>
       )}
 
@@ -412,24 +435,25 @@ export default function NurseryPlannerPage() {
         <div className="flex items-center gap-2 border-b pb-2">
           <div className="flex-1 -mx-2 px-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <div className="inline-flex gap-2">
-              {children.map((child) => (
-                <button
-                  key={child.id}
-                  onClick={() => setActiveChildId(child.id)}
-                  className={`shrink-0 px-3 sm:px-4 py-2 rounded-full border text-sm
-                    ${activeChild?.id === child.id ? "bg-white font-semibold shadow-sm" : "bg-gray-100 hover:bg-gray-50"}`}
-                >
-                  {child.name}
-                </button>
-              ))}
+              {children.map((child) => {
+                const active = activeChild?.id === child.id;
+                return (
+                  <Button
+                    key={child.id}
+                    onClick={() => setActiveChildId(child.id)}
+                    variant={active ? "default" : "outline"}
+                    className="shrink-0 rounded-full"
+                    size="sm"
+                  >
+                    {child.name}
+                  </Button>
+                );
+              })}
             </div>
           </div>
-          <button
-            onClick={addChild}
-            className="shrink-0 px-3 sm:px-4 py-2 rounded-full border hover:bg-[var(--accent-3)] hover:bg-opacity-20"
-          >
+          <Button variant="outline" size="sm" className="shrink-0" onClick={addChild}>
             + Add child
-          </button>
+          </Button>
         </div>
 
         {/* Active child content */}
@@ -438,12 +462,16 @@ export default function NurseryPlannerPage() {
             {/* Child meta controls */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex flex-wrap items-end gap-3">
-                <input
-                  className="border rounded-xl px-3 py-2 w-full sm:w-56"
-                  value={activeChild.name}
-                  onChange={(e) => updateChild(activeChild.id, { name: e.target.value })}
-                  placeholder="Child name"
-                />
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs sm:text-sm">Child name</Label>
+                  <Input
+                    className="w-full sm:w-56"
+                    value={activeChild.name}
+                    onChange={(e) => updateChild(activeChild.id, { name: e.target.value })}
+                    placeholder="Child name"
+                  />
+                </div>
+
                 <NumberField
                   label="Age (years)"
                   value={activeChild.ageYears}
@@ -458,14 +486,16 @@ export default function NurseryPlannerPage() {
                   onChange={(v) => updateChild(activeChild.id, { tfcMonthlyCap: v })}
                 />
               </div>
+
               {children.length > 1 && (
-                <button
+                <Button
+                  variant="outline"
+                  className="self-start lg:self-auto text-red-600"
                   onClick={() => removeChild(activeChild.id)}
-                  className="self-start lg:self-auto px-3 py-2 rounded-full border text-red-600 hover:bg-red-50"
                   aria-label={`Remove ${activeChild.name}`}
                 >
                   Remove
-                </button>
+                </Button>
               )}
             </div>
 
@@ -476,16 +506,32 @@ export default function NurseryPlannerPage() {
                 <span className="badge badge-teal">Provider</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-                <NumberField label="AM rate (£)" value={activeChild.rates.am}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, am: v } })} />
-                <NumberField label="PM rate (£)" value={activeChild.rates.pm}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, pm: v } })} />
-                <NumberField label="Day rate (£)" value={activeChild.rates.day}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, day: v } })} />
-                <NumberField label="Hourly rate (£)" value={activeChild.rates.hourly}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, hourly: v } })} />
-                <NumberField label="Full-day threshold (hrs)" step={0.25} value={activeChild.sessions.fullDayHours}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, fullDayHours: v } })} />
+                <NumberField
+                  label="AM rate (£)"
+                  value={activeChild.rates.am}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, am: v } })}
+                />
+                <NumberField
+                  label="PM rate (£)"
+                  value={activeChild.rates.pm}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, pm: v } })}
+                />
+                <NumberField
+                  label="Day rate (£)"
+                  value={activeChild.rates.day}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, day: v } })}
+                />
+                <NumberField
+                  label="Hourly rate (£)"
+                  value={activeChild.rates.hourly}
+                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, hourly: v } })}
+                />
+                <NumberField
+                  label="Full-day threshold (hrs)"
+                  step={0.25}
+                  value={activeChild.sessions.fullDayHours}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, fullDayHours: v } })}
+                />
               </div>
             </section>
 
@@ -496,19 +542,39 @@ export default function NurseryPlannerPage() {
                 <span className="badge badge-pink">Timetable</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-4">
-                <TimeField label="AM start" value={activeChild.sessions.amStart}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amStart: v } })} />
-                <TimeField label="AM end" value={activeChild.sessions.amEnd}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amEnd: v } })} />
-                <TimeField label="PM start" value={activeChild.sessions.pmStart}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmStart: v } })} />
-                <TimeField label="PM end" value={activeChild.sessions.pmEnd}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmEnd: v } })} />
-                <NumberField label="Hourly rounding (mins)" step={1} value={activeChild.sessions.hourlyRoundingMinutes}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, hourlyRoundingMinutes: v } })} />
-                <NumberField label="Session trigger (mins)" step={5} value={activeChild.sessions.sessionTriggerMinutes}
+                <TimeField
+                  label="AM start"
+                  value={activeChild.sessions.amStart}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amStart: v } })}
+                />
+                <TimeField
+                  label="AM end"
+                  value={activeChild.sessions.amEnd}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amEnd: v } })}
+                />
+                <TimeField
+                  label="PM start"
+                  value={activeChild.sessions.pmStart}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmStart: v } })}
+                />
+                <TimeField
+                  label="PM end"
+                  value={activeChild.sessions.pmEnd}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmEnd: v } })}
+                />
+                <NumberField
+                  label="Hourly rounding (mins)"
+                  step={1}
+                  value={activeChild.sessions.hourlyRoundingMinutes}
+                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, hourlyRoundingMinutes: v } })}
+                />
+                <NumberField
+                  label="Session trigger (mins)"
+                  step={5}
+                  value={activeChild.sessions.sessionTriggerMinutes}
                   onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, sessionTriggerMinutes: v } })}
-                  hint="Min overlap to count a session" />
+                  hint="Min overlap to count a session"
+                />
                 <div className="self-end text-xs sm:text-sm opacity-70">Hourly is rounded up.</div>
               </div>
             </section>
@@ -517,8 +583,9 @@ export default function NurseryPlannerPage() {
             <section className="card">
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">Timetable</div>
-                <button
-                  className="text-sm px-3 py-1.5 rounded-full border hover:bg-gray-50"
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => {
                     const mon = activeChild.week.Mon;
                     if (!mon?.start || !mon?.end) return;
@@ -528,7 +595,7 @@ export default function NurseryPlannerPage() {
                   }}
                 >
                   Copy to all
-                </button>
+                </Button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -549,12 +616,14 @@ export default function NurseryPlannerPage() {
                         updateChild(activeChild.id, { week: { ...activeChild.week, [d]: { ...activeChild.week[d], end: v } } })
                       }
                     />
-                    <button
-                      className="text-xs text-red-600 underline"
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="px-0 text-red-600 w-fit p-2"
                       onClick={() => updateChild(activeChild.id, { week: { ...activeChild.week, [d]: {} } })}
                     >
                       Clear
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -564,7 +633,7 @@ export default function NurseryPlannerPage() {
             {activeCalc && (
               <section className="card">
                 <div className="overflow-auto">
-                  <table className=" w-full text-xs sm:text-sm">
+                  <table className="w-full text-xs sm:text-sm">
                     <thead>
                       <tr>
                         <th className="w-[50px]">Day</th>
@@ -634,34 +703,38 @@ export default function NurseryPlannerPage() {
 function NumberField({
   label, value, onChange, step = 0.5, hint,
 }: { label: string; value: number; onChange: (v: number) => void; step?: number; hint?: string; }) {
+  const numUX = useNumberInputUX();
   return (
-    <label className="flex flex-col gap-1 w-full">
-      <span className="text-xs sm:text-sm">{label}</span>
-      <input
+    <div className="flex flex-col gap-1 w-full">
+      <Label className="text-xs sm:text-sm">{label}</Label>
+      <Input
         type="number"
+        inputMode="decimal"
         step={step}
         value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
-        className="px-3 py-2 rounded-lg border"
+        className="no-spinners"
+        {...numUX}
       />
       {hint ? <span className="text-[11px] sm:text-xs opacity-70">{hint}</span> : null}
-    </label>
+    </div>
   );
 }
 
 function TimeField({
   label, value, onChange,
 }: { label: string; value: string; onChange: (v: TimeStr) => void; }) {
+  // Keep time inputs crisp and consistent
   return (
-    <label className="flex flex-col gap-1 w-full">
-      <span className="text-xs sm:text-sm">{label}</span>
-      <input
+    <div className="flex flex-col gap-1 w-fit">
+      <Label className="text-xs sm:text-sm">{label}</Label>
+      <Input
         type="time"
+        className="w-full"
         value={value}
         onChange={(e) => onChange(e.target.value as TimeStr)}
-        className="px-3 py-2 rounded-lg border"
       />
-    </label>
+    </div>
   );
 }
 
@@ -679,18 +752,20 @@ function YearModeToggle({
 }: { yearMode: YearMode; setYearMode: (m: YearMode) => void; }) {
   return (
     <div className="inline-flex rounded-full border overflow-hidden">
-      <button
-        className={`px-3 sm:px-4 py-2 text-sm ${yearMode === "FULL_YEAR" ? "bg-[var(--accent-2)] text-white" : ""}`}
+      <Button
+        variant={yearMode === "FULL_YEAR" ? "default" : "ghost"}
+        className="rounded-none"
         onClick={() => setYearMode("FULL_YEAR")}
       >
         Full Year
-      </button>
-      <button
-        className={`px-3 sm:px-4 py-2 text-sm border-l ${yearMode === "TERM_TIME" ? "bg-[var(--accent)] text-white" : ""}`}
+      </Button>
+      <Button
+        variant={yearMode === "TERM_TIME" ? "default" : "ghost"}
+        className="rounded-none border-l"
         onClick={() => setYearMode("TERM_TIME")}
       >
         Term Time
-      </button>
+      </Button>
     </div>
   );
 }

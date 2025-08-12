@@ -1,170 +1,261 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-/* Base theme variables */
+/* Tailwind dark mode uses the .dark class */
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────── Theme: Light (default) ─────────────────── */
 :root {
-  --background: #fefcfb;       /* warm off-white */
-  --foreground: #2f2f2f;       /* deep grey for good contrast */
-  --accent-4:  #7c3aed; /* violet */
-  --card-bg2: #ffffff;
-  --card-bg2: #a7d8de;
-  --border-color: #e7e7e7;
-    --brand:   #3b82f6; /* primary (blue) */
-  --brand-2: #8b5cf6; /* secondary (violet) */
-  --brand-3: #f59e0b; /* accent (amber) */
-  /* wire brand to existing accents if you like */
-  --accent-2: var(--brand);
-  --accent:   var(--brand-2);
-  --accent-3: var(--brand-3);
+  /* Brand palette (vibrant, not pastel) */
+  --brand:   #3b82f6; /* blue-500 */
+  --brand-2: #8b5cf6; /* violet-500 */
+  --brand-3: #f59e0b; /* amber-500 */
+  --accent-4:#7c3aed; /* violet-600 */
+
+  /* Map brand into shadcn tokens */
+  --background: oklch(1 0 0);          /* white */
+  --foreground: oklch(0.20 0 0);       /* near-black for good contrast */
+
+  --card:      oklch(1 0 0);
+  --card-foreground: var(--foreground);
+
+  --popover:   oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+
+  /* Primary buttons/links use your brand blue */
+  --primary: var(--brand);
+  --primary-foreground: oklch(0.98 0 0); /* white-ish text */
+
+  /* Secondary/Muted surfaces */
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.28 0 0);
+
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.50 0 0);
+
+  /* Accent (used by some badges/underlines) — vivid pink */
+  --accent: #ec4899;                      /* pink-500 */
+  --accent-foreground: oklch(0.98 0 0);   /* white text */
+
+  /* Status / borders / inputs */
+  --destructive: oklch(0.60 0.23 27);   /* strong red */
+  --border: oklch(0.92 0 0);
+  --input:  oklch(0.92 0 0);
+  --ring:   oklch(0.70 0 0);
+
+  /* Charts (kept vibrant) */
+  --chart-1: oklch(0.65 0.22 41);   /* orange */
+  --chart-2: oklch(0.60 0.12 185);  /* teal */
+  --chart-3: oklch(0.40 0.07 227);  /* blue */
+  --chart-4: oklch(0.83 0.19 84);   /* green */
+  --chart-5: oklch(0.77 0.19 70);   /* lime */
+
+  /* Sidebar tokens shadcn uses in some kits */
+  --sidebar:  oklch(0.99 0 0);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--secondary);
+  --sidebar-accent-foreground: var(--secondary-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* Legacy app variables (kept for your components) */
+  --card-bg: var(--card);                 /* your .card containers use this */
+  --card-bg2: #ffffff;                    /* removed duplicate, keep white */
+  --border-color: var(--border);
+  --accent-2: var(--primary);             /* old code points here for links/buttons */
+  --accent-3: var(--brand-3);             /* amber accent */
+
+  --radius: 0.625rem;
 }
 
+/* Tailwind “inline theme” mapping for shadcn */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-ring:  var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-  --background: #fefcfb;       /* warm off-white */
-  --foreground: #2f2f2f;       /* deep grey for good contrast */
-  --accent: #f8c8dc;           /* soft pink */
-  --accent-2: #a7d8de;         /* soft teal */
-  --accent-3: #fce8b2;         /* warm pastel yellow */
-  --card-bg: #ffffff;
-  --border-color: #e7e7e7;
-  }
+/* ─────────────────── Theme: Dark (.dark class) ─────────────────── */
+/* Use ONLY the .dark class (remove your old @media dark block). */
+.dark {
+  --background: oklch(0.16 0 0);
+  --foreground: oklch(0.98 0 0);
+
+  --card: oklch(0.20 0 0);
+  --card-foreground: var(--foreground);
+
+  --popover: oklch(0.20 0 0);
+  --popover-foreground: var(--foreground);
+
+  --primary: color-mix(in oklch, var(--brand) 86%, black); /* slightly deeper blue */
+  --primary-foreground: oklch(0.98 0 0);
+
+  --secondary: oklch(0.28 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+
+  --muted: oklch(0.28 0 0);
+  --muted-foreground: oklch(0.72 0 0);
+
+  --accent: color-mix(in oklch, #ec4899 85%, black);  /* deeper pink */
+  --accent-foreground: oklch(0.98 0 0);
+
+  --destructive: oklch(0.70 0.19 22);
+  --border: oklch(0.30 0 0 / 60%);
+  --input:  oklch(0.30 0 0 / 60%);
+  --ring:   oklch(0.60 0 0);
+
+  --chart-1: oklch(0.62 0.22 264);
+  --chart-2: oklch(0.66 0.17 162);
+  --chart-3: oklch(0.71 0.19 70);
+  --chart-4: oklch(0.58 0.26 304);
+  --chart-5: oklch(0.61 0.25 16);
+
+  --sidebar: oklch(0.20 0 0);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--secondary);
+  --sidebar-accent-foreground: var(--secondary-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* Legacy tokens in dark */
+  --card-bg: var(--card);
+  --border-color: var(--border);
+  --accent-2: var(--primary);
+  --accent-3: var(--brand-3);
 }
 
-/* Base body styling */
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  line-height: 1.6;
-}
+/* ─────────────────── Base styles ─────────────────── */
+body { line-height: 1.6; }
 
-/* Links */
+/* Links follow primary brand */
 a {
-  color: var(--accent-2);
+  color: var(--primary);
   text-decoration: none;
   font-weight: 500;
 }
-a:hover {
-  text-decoration: underline;
-}
+a:hover { text-decoration: underline; }
 
-/* Buttons */
-button {
-  transition: background-color 0.2s ease, transform 0.1s ease;
-}
-button:active {
-  transform: scale(0.98);
-}
+/* Buttons micro-interactions */
+button { transition: background-color .2s, transform .1s; }
+button:active { transform: scale(.98); }
 
-/* Card-like containers */
+/* Cards */
 .lgcard {
   background-color: var(--card-bg);
-  padding: 0.5rem;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.03);
+  padding: .5rem;
+  box-shadow: 0 4px 8px rgba(0,0,0,.03);
 }
 .card {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 1rem;
-  padding: 0.5rem;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.03);
+  padding: .5rem;
+  box-shadow: 0 4px 8px rgba(0,0,0,.03);
 }
 
-/* Headings with a friendly accent underline */
-h1, h2, h3 {
-  font-family: var(--font-sans);
-  position: relative;
-}
+/* Headings underline */
+h1, h2, h3 { font-family: var(--font-sans); position: relative; }
 h1::after, h2::after, h3::after {
   content: "";
-  position: absolute;
-  left: 0;
-  bottom: -4px;
-  width: 40px;
-  height: 4px;
+  position: absolute; left: 0; bottom: -4px;
+  width: 40px; height: 4px;
   background: var(--accent);
   border-radius: 2px;
 }
 
 /* Tables */
-table {
-  border-collapse: collapse;
-  width: 100%;
-  background: var(--card-bg);
-  border-radius: 0.75rem;
-  overflow: hidden;
-}
-th {
-  background-color: var(--accent-3);
-  text-align: left;
-  padding: 0.75rem;
-}
-td {
-  padding: 0.75rem;
-  border-top: 1px solid var(--border-color);
-}
+table { border-collapse: collapse; width: 100%; background: var(--card-bg); border-radius: .75rem; overflow: hidden; }
+th { background-color: var(--accent-3); color: #000; text-align: left; padding: .75rem; }
+td { padding: .75rem; border-top: 1px solid var(--border-color); }
 
-/* Inputs */
-input, select {
-  border-radius: 0.5rem;
-  border: 1px solid var(--border-color);
-  padding: 0.5rem 0.75rem;
-  background: #fff;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
+/* Minimal form resets — let shadcn Input/Select style themselves;
+   keep only focus ring consistency across any raw inputs. */
 input:focus, select:focus {
-  border-color: var(--accent-2);
-  box-shadow: 0 0 0 2px rgba(167, 216, 222, 0.4);
   outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 35%, transparent);
+  border-color: var(--primary);
 }
 
-/* Checkboxes and radios */
-input[type="checkbox"], input[type="radio"] {
-  accent-color: var(--accent-2);
-}
+/* Checkbox accent for native inputs (shadcn Checkbox is styled already) */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 
-/* Utility classes for pastel badges */
-.badge {
-  display: inline-block;
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: .4rem;
-  padding: .25rem .6rem;
-  border-radius: 999px;
-  font-weight: 600;
-}
+/* Badges */
+.badge { display: inline-block; padding: .25rem .5rem; border-radius: 9999px; font-size: .75rem; font-weight: 500; }
+.pill  { display: inline-flex; align-items: center; gap: .4rem; padding: .25rem .6rem; border-radius: 999px; font-weight: 600; }
 
 .pill-blue  { background: rgba(59,130,246,.12); color: #1d4ed8; }
 .pill-green { background: rgba(16,185,129,.12); color: #047857; }
 .pill-amber { background: rgba(245,158,11,.14); color: #b45309; }
 .pill-slate { background: rgba(100,116,139,.14); color: #334155; }
 
+.pricing-card .price { font-size: 2rem; line-height: 1.1; font-weight: 700; margin: .25rem 0 .75rem; }
+.pricing-card.featured { background: linear-gradient(180deg, color-mix(in oklch, var(--primary) 10%, transparent), transparent); }
 
-.pricing-card .price {
-  font-size: 2rem;
-  line-height: 1.1;
-  font-weight: 700;
-  margin: .25rem 0 .75rem;
-}
-.pricing-card.featured {
-  background: linear-gradient(180deg, rgba(59,130,246,.04), rgba(59,130,246,0));
-}
-
-
-.badge-pink { background-color: var(--accent); color: #fff; }
-.badge-teal { background-color: var(--accent-2); color: #fff; }
+/* Use the right foreground for the badges now that accent is vivid */
+.badge-pink   { background-color: var(--accent); color: var(--accent-foreground); }
+.badge-teal   { background-color: var(--primary); color: var(--primary-foreground); }
 .badge-yellow { background-color: var(--accent-3); color: #000; }
 
+/* Tailwind base layer hook for shadcn */
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground; }
+}
 
+/* Number inputs: hide spinners when using the helper class */
+input[type="number"].no-spinners::-webkit-outer-spin-button,
+input[type="number"].no-spinners::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"].no-spinners {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

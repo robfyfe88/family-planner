@@ -1,5 +1,16 @@
 "use client";
+
 import React from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** ---------- Types ---------- */
 type Owner = "joint" | "A" | "B";
@@ -47,6 +58,28 @@ function safe(n: any): number {
   const v = typeof n === "number" ? n : parseFloat(n ?? "0");
   return Number.isFinite(v) ? v : 0;
 }
+
+function useSelectAllInputProps() {
+  const onFocus = React.useCallback((e: React.FocusEvent<HTMLInputElement>) => {
+    e.currentTarget.select();
+  }, []);
+
+  const onMouseUp = React.useCallback((e: React.MouseEvent<HTMLInputElement>) => {
+    e.preventDefault();
+  }, []);
+
+  const onTouchEnd = React.useCallback((e: React.TouchEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    if (el.selectionStart === el.selectionEnd) {
+      setTimeout(() => {
+        try { el.select(); } catch {}
+      }, 0);
+    }
+  }, []);
+
+  return { onFocus, onMouseUp, onTouchEnd };
+}
+
 function round2(n: number) { return Math.round(n * 100) / 100; }
 function csv(s: string) { return (s ?? "").replace(/"/g, '""'); }
 function downloadText(filename: string, text: string) {
@@ -295,15 +328,19 @@ export default function FamilyBudgetPlanner() {
               <div className="flex items-center gap-2">
                 <label className="text-sm flex items-center gap-2">
                   <span>Summary month</span>
-                  <select
-                    className="px-2 py-1 border rounded"
-                    value={summaryMonthIdx}
-                    onChange={(e) => setSummaryMonthIdx(parseInt(e.target.value, 10))}
+                  <Select
+                    value={String(summaryMonthIdx)}
+                    onValueChange={(v) => setSummaryMonthIdx(parseInt(v, 10))}
                   >
-                    {MONTHS.map((m, i) => (
-                      <option key={m} value={i}>{m}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="w-40 h-9">
+                      <SelectValue placeholder="Select month" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTHS.map((m, i) => (
+                        <SelectItem key={m} value={String(i)}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
               </div>
             </div>
@@ -311,30 +348,39 @@ export default function FamilyBudgetPlanner() {
             {/* Mode + names */}
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <div className="inline-flex rounded-full border overflow-hidden">
-                <button
-                  className={`px-3 py-1.5 text-sm ${state.mode === "joint" ? "bg-[var(--accent-2)] text-white" : ""}`}
-                  onClick={() => setState((s) => ({ ...s, mode: "joint", incomes: s.incomes.map(r => ({...r, owner: r.owner ?? "joint"})), expenses: s.expenses.map(r => ({...r, owner: r.owner ?? "joint"})) }))}
+                <Button
+                  variant={state.mode === "joint" ? "default" : "ghost"}
+                  className={`px-3 py-1.5 text-sm rounded-none ${state.mode === "joint" ? "" : "bg-transparent"}`}
+                  onClick={() =>
+                    setState((s) => ({
+                      ...s,
+                      mode: "joint",
+                      incomes: s.incomes.map((r) => ({ ...r, owner: r.owner ?? "joint" })),
+                      expenses: s.expenses.map((r) => ({ ...r, owner: r.owner ?? "joint" })),
+                    }))
+                  }
                 >
                   Joint
-                </button>
-                <button
-                  className={`px-3 py-1.5 text-sm border-l ${state.mode === "split" ? "bg-[var(--accent)] text-white" : ""}`}
+                </Button>
+                <Button
+                  variant={state.mode === "split" ? "default" : "ghost"}
+                  className={`px-3 py-1.5 text-sm rounded-none border-l ${state.mode === "split" ? "" : "bg-transparent"}`}
                   onClick={() => setState((s) => ({ ...s, mode: "split" }))}
                 >
                   Split by person
-                </button>
+                </Button>
               </div>
 
               {state.mode === "split" && (
                 <div className="flex items-center gap-2">
-                  <input
-                    className="px-2 py-1 border rounded w-36"
+                  <Input
+                    className="px-2 py-1 h-9 w-36"
                     value={state.parentAName}
                     onChange={(e) => setState((s) => ({ ...s, parentAName: e.target.value || "Parent A" }))}
                     placeholder="Parent A"
                   />
-                  <input
-                    className="px-2 py-1 border rounded w-36"
+                  <Input
+                    className="px-2 py-1 h-9 w-36"
                     value={state.parentBName}
                     onChange={(e) => setState((s) => ({ ...s, parentBName: e.target.value || "Parent B" }))}
                     placeholder="Parent B"
@@ -411,9 +457,9 @@ export default function FamilyBudgetPlanner() {
       <section className="card">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h3 className="font-medium">Pots tracker (by month)</h3>
-          <button className="px-3 py-2 rounded-lg border hover:bg-gray-50 w-full sm:w-auto" onClick={addPot}>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={addPot}>
             + Add pot
-          </button>
+          </Button>
         </div>
 
         {/* Mobile cards */}
@@ -438,18 +484,14 @@ export default function FamilyBudgetPlanner() {
                 {state.pots.map((p) => (
                   <th key={p.id} className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <input
-                        className="text-right w-40 px-2 py-1 border rounded-lg"
+                      <Input
+                        className="text-right w-40"
                         value={p.name}
                         onChange={(e) => renamePot(p.id, e.target.value)}
                       />
-                      <button
-                        className="px-2 py-1 rounded-lg border hover:bg-gray-50"
-                        onClick={() => removePot(p.id)}
-                        aria-label={`Remove ${p.name}`}
-                      >
+                      <Button variant="outline" size="icon" onClick={() => removePot(p.id)} aria-label={`Remove ${p.name}`}>
                         🗑️
-                      </button>
+                      </Button>
                     </div>
                   </th>
                 ))}
@@ -486,12 +528,12 @@ export default function FamilyBudgetPlanner() {
         </div>
 
         <div className="mt-3 flex flex-col sm:flex-row gap-2 items-stretch sm:items-center justify-between">
-          <button className="px-3 py-2 rounded-lg border hover:bg-gray-50 w-full sm:w-auto" onClick={exportCSV}>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={exportCSV}>
             Export CSV
-          </button>
-          <button className="px-3 py-2 rounded-lg border hover:bg-gray-50 w-full sm:w-auto" onClick={resetDefaults}>
+          </Button>
+          <Button variant="outline" className="w-full sm:w-auto" onClick={resetDefaults}>
             Reset to defaults
-          </button>
+          </Button>
         </div>
       </section>
     </div>
@@ -516,6 +558,8 @@ function PotsCardsMobile({
   ytdByPot: Record<string, number>;
   ytdTotal: number;
 }) {
+  const selectAll = useSelectAllInputProps();
+
   return (
     <div className="space-y-3">
       {/* Pot headers inline editor */}
@@ -524,18 +568,14 @@ function PotsCardsMobile({
         <div className="grid grid-cols-1 gap-2">
           {pots.map((p) => (
             <div key={p.id} className="flex items-center gap-2">
-              <input
-                className="flex-1 px-2 py-1 border rounded-lg"
+              <Input
+                className="flex-1"
                 value={p.name}
                 onChange={(e) => renamePot(p.id, e.target.value)}
               />
-              <button
-                className="px-2 py-1 rounded-lg border hover:bg-gray-50"
-                onClick={() => removePot(p.id)}
-                aria-label={`Remove ${p.name}`}
-              >
+              <Button variant="outline" size="icon" onClick={() => removePot(p.id)} aria-label={`Remove ${p.name}`}>
                 🗑️
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -550,12 +590,16 @@ function PotsCardsMobile({
               {pots.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-2">
                   <div className="text-sm opacity-80">{p.name}</div>
-                  <input
+                  <Input
                     type="number"
+                    inputMode="decimal"
                     step={0.01}
-                    className="w-32 text-right px-2 py-1 border rounded-lg"
+                    className="w-32 text-right no-spinners"
                     value={Number.isFinite(m.values[p.id]) ? m.values[p.id] : 0}
                     onChange={(e) => setMonthValue(rowIdx, p.id, parseFloat(e.target.value || "0"))}
+                    onWheel={(e) => { (e.target as HTMLInputElement).blur(); }}
+                    onKeyDown={(e) => { if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault(); }}
+                    {...selectAll}
                   />
                 </div>
               ))}
@@ -623,6 +667,7 @@ function BudgetEditorCompact({
   const onChange = tab === "income" ? onIncomeChange : onExpenseChange;
   const onAdd = tab === "income" ? onAddIncome : onAddExpense;
   const onRemove = tab === "income" ? onRemoveIncome : onRemoveExpense;
+  const selectAll = useSelectAllInputProps();
 
   const filtered = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -655,33 +700,39 @@ function BudgetEditorCompact({
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-full border overflow-hidden" role="tablist" aria-label="Budget editor tabs">
-          <button
+          <Button
             role="tab"
+            variant={tab === "income" ? "default" : "ghost"}
             aria-selected={tab === "income"}
-            className={`px-4 py-2 text-sm ${tab === "income" ? "bg-[var(--accent-2)] text-white" : ""}`}
+            className="px-4 py-2 text-sm rounded-none"
             onClick={() => setTab("income")}
           >
             Income
-          </button>
-          <button
+          </Button>
+          <Button
             role="tab"
+            variant={tab === "expense" ? "default" : "ghost"}
             aria-selected={tab === "expense"}
-            className={`px-4 py-2 text-sm border-l ${tab === "expense" ? "bg-[var(--accent)] text-white" : ""}`}
+            className="px-4 py-2 text-sm rounded-none border-l"
             onClick={() => setTab("expense")}
           >
             Expenses
-          </button>
+          </Button>
         </div>
 
         <div className="flex items-center gap-2 ml-auto w-full sm:w-auto">
-          <input
+          <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={`Search ${tab === "income" ? "income" : "expenses"}…`}
-            className="pl-3 pr-3 py-2 border rounded-xl w-full sm:w-64"
+            className="pl-3 pr-3 py-2 w-full sm:w-64"
           />
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} />
+            <Checkbox
+              checked={hideZero}
+              onCheckedChange={(v) => setHideZero(Boolean(v))}
+              aria-label="Hide zero amounts"
+            />
             Hide £0
           </label>
         </div>
@@ -693,13 +744,14 @@ function BudgetEditorCompact({
           <span className="text-sm opacity-70">Filter:</span>
           <div className="inline-flex rounded-full border overflow-hidden">
             {(["all","joint","A","B"] as const).map((o) => (
-              <button
+              <Button
                 key={o}
-                className={`px-3 py-1.5 text-sm ${ownerFilter === o ? "bg-[var(--card-bg2)] font-medium" : ""}`}
+                variant={ownerFilter === o ? "default" : "ghost"}
+                className="px-3 py-1.5 text-sm rounded-none"
                 onClick={() => setOwnerFilter(o)}
               >
                 {o === "all" ? "All" : o === "joint" ? "Joint" : o === "A" ? parentAName : parentBName}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -710,7 +762,7 @@ function BudgetEditorCompact({
         {filtered.map((r, idx) => (
           <div key={r.id} className="border rounded-xl p-3">
             <div className="flex items-center justify-between mb-2">
-              <input
+              <Input
                 className="flex-1 bg-transparent outline-none mr-2"
                 placeholder="Label"
                 value={r.label}
@@ -718,31 +770,36 @@ function BudgetEditorCompact({
                 autoFocus={idx === filtered.length - 1 && !r.label}
               />
               {mode === "split" && (
-                <select
-                  className="px-2 py-1 border rounded text-sm"
-                  value={r.owner ?? "joint"}
-                  onChange={(e) => onChange(r.id, { owner: e.target.value as Owner })}
+                <Select
+                  value={(r.owner ?? "joint") as string}
+                  onValueChange={(val) => onChange(r.id, { owner: val as Owner })}
                 >
-                  <option value="joint">Joint</option>
-                  <option value="A">{parentAName}</option>
-                  <option value="B">{parentBName}</option>
-                </select>
+                  <SelectTrigger className="w-36 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="joint">Joint</SelectItem>
+                    <SelectItem value="A">{parentAName}</SelectItem>
+                    <SelectItem value="B">{parentBName}</SelectItem>
+                  </SelectContent>
+                </Select>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 type="number"
+                inputMode="decimal"
                 step={0.01}
-                className="flex-1 text-right bg-transparent outline-none border rounded-lg px-2 py-2"
+                className="flex-1 text-right bg-transparent no-spinners"
                 value={Number.isFinite(r.amount) ? r.amount : 0}
                 onChange={(e) => onChange(r.id, { amount: parseFloat(e.target.value || "0") })}
+                onWheel={(e) => { (e.target as HTMLInputElement).blur(); }}
+                onKeyDown={(e) => { if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault(); }}
+                {...selectAll}
               />
-              <button
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border"
-                onClick={() => onRemove(r.id)}
-              >
-                <span aria-hidden>🗑️</span>
-              </button>
+              <Button variant="outline" onClick={() => onRemove(r.id)} aria-label="Remove row">
+                🗑️
+              </Button>
             </div>
             {mode === "split" && (
               <div className="mt-2"><OwnerBadge owner={r.owner ?? "joint"} /></div>
@@ -753,13 +810,9 @@ function BudgetEditorCompact({
           <div className="px-3 py-6 text-center text-sm opacity-70 border rounded-xl">No rows. Add one below.</div>
         )}
         <div className="flex items-center justify-between gap-3 px-1">
-          <button
-            className="inline-flex items-center justify-center gap-2 px-3 py-3 rounded-lg border w-full"
-            onClick={onAdd}
-          >
-            <span aria-hidden>➕</span>
-            <span>Add {tab === "income" ? "income" : "expense"}</span>
-          </button>
+          <Button variant="outline" className="w-1/2" onClick={onAdd}>
+            ➕ Add {tab === "income" ? "income" : "expense"}
+          </Button>
           <div className="text-sm whitespace-nowrap">
             <span className="opacity-70 mr-2">Total</span>
             <span className="font-semibold">
@@ -785,8 +838,8 @@ function BudgetEditorCompact({
               {filtered.map((r, idx) => (
                 <tr key={r.id} className="group">
                   <td className="px-3 py-2">
-                    <input
-                      className="w-full bg-transparent outline-none"
+                    <Input
+                      className="w-full bg-transparent"
                       placeholder="Label"
                       value={r.label}
                       onChange={(e) => onChange(r.id, { label: e.target.value })}
@@ -795,34 +848,44 @@ function BudgetEditorCompact({
                   </td>
                   {mode === "split" && (
                     <td className="px-3 py-2">
-                      <select
-                        className="px-2 py-1 border rounded w-full"
-                        value={r.owner ?? "joint"}
-                        onChange={(e) => onChange(r.id, { owner: e.target.value as Owner })}
+                      <Select
+                        value={(r.owner ?? "joint") as string}
+                        onValueChange={(val) => onChange(r.id, { owner: val as Owner })}
                       >
-                        <option value="joint">Joint</option>
-                        <option value="A">{parentAName}</option>
-                        <option value="B">{parentBName}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="joint">Joint</SelectItem>
+                          <SelectItem value="A">{parentAName}</SelectItem>
+                          <SelectItem value="B">{parentBName}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </td>
                   )}
                   <td className="px-3 py-2 text-right">
-                    <input
+                    <Input
                       type="number"
+                      inputMode="decimal"
                       step={0.01}
-                      className="w-28 sm:w-36 text-right bg-transparent outline-none border rounded-lg px-2 py-1"
+                      className="w-28 sm:w-36 text-right no-spinners"
                       value={Number.isFinite(r.amount) ? r.amount : 0}
                       onChange={(e) => onChange(r.id, { amount: parseFloat(e.target.value || "0") })}
+                      onWheel={(e) => { (e.target as HTMLInputElement).blur(); }}
+                      onKeyDown={(e) => { if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault(); }}
+                      {...selectAll}
                     />
                   </td>
                   <td className="px-2 py-2 text-right">
-                    <button
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border opacity-0 group-hover:opacity-100 transition"
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="opacity-0 group-hover:opacity-100 transition"
                       onClick={() => onRemove(r.id)}
                       aria-label="Remove row"
                     >
-                      <span aria-hidden>🗑️</span>
-                    </button>
+                      🗑️
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -839,13 +902,9 @@ function BudgetEditorCompact({
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 px-3 py-2 border-t bg-[var(--card-bg)]">
-          <button
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-gray-50"
-            onClick={onAdd}
-          >
-            <span aria-hidden>➕</span>
-            <span>Add {tab === "income" ? "income" : "expense"}</span>
-          </button>
+          <Button variant="outline" onClick={onAdd}>
+            ➕ Add {tab === "income" ? "income" : "expense"}
+          </Button>
           <div className="text-sm">
             <span className="opacity-70 mr-2">Total</span>
             <span className="font-semibold">
@@ -858,15 +917,24 @@ function BudgetEditorCompact({
   );
 }
 
-/** ---------- Small pieces ---------- */
 function NumberCell({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const selectAll = useSelectAllInputProps();
+
   return (
-    <input
+    <Input
       type="number"
+      inputMode="decimal"
       step={0.01}
-      className="w-24 sm:w-28 text-right px-2 py-1 border rounded-lg"
+      className="w-24 sm:w-28 text-right no-spinners"
       value={Number.isFinite(value) ? value : 0}
       onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
+      onWheel={(e) => {
+        (e.target as HTMLInputElement).blur();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+      }}
+      {...selectAll}
     />
   );
 }
