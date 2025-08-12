@@ -2,6 +2,7 @@
 
 import { useSession, signIn, signOut } from "next-auth/react";
 import FamilyToolsPage from "../family-tools/FamilyToolsPage";
+import HearthPlanLogo from "@/components/HearthPlanLogo";
 
 export default function AppHome() {
   const { data: session, status } = useSession();
@@ -18,7 +19,7 @@ export default function AppHome() {
     return (
       <div className="p-6">
         <div className="max-w-md mx-auto text-center p-8 border rounded-2xl bg-[var(--card-bg)]">
-          <h1 className="text-2xl font-semibold mb-1">Family Planner</h1>
+          <HearthPlanLogo size={50} variant="app"/>
           <p className="text-sm opacity-70 mb-5">
             Sign in to save your nursery plans, leave schedules, and budgets.
           </p>
@@ -39,7 +40,7 @@ export default function AppHome() {
   return (
     <div className="p-2 space-y-4">
       <header className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Family Planner</h1>
+        <HearthPlanLogo size={50} variant="app"/>
         <div className="flex items-center gap-2">
           <UserChip user={user} />
           <button
@@ -67,7 +68,6 @@ function UserChip({ user }: { user?: { name?: string | null; email?: string | nu
   return (
     <div className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full border border-[var(--border-color)] bg-white max-w-[60vw] sm:max-w-none">
       {user?.image ? (
-        // using <img> avoids Next/Image config in app dir
         <img
           src={user.image}
           alt=""

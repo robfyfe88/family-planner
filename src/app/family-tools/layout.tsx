@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Family App",
+  title: "HearthPlan — family planning made simple",
   description: "Created to help families stay connected",
 };
 
