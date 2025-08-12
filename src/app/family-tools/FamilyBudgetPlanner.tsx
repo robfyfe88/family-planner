@@ -2,20 +2,28 @@
 import React from "react";
 
 /** ---------- Types ---------- */
-type Row = { id: string; label: string; amount: number };
+type Owner = "joint" | "A" | "B";
+type Row = { id: string; label: string; amount: number; owner?: Owner };
 
 type Pot = { id: string; name: string };
 type PotMonth = { month: string; values: Record<string, number> };
 type SavingsYear = PotMonth[];
 
+type BudgetMode = "joint" | "split";
+
 type BudgetState = {
+  mode: BudgetMode;
+  parentAName: string;
+  parentBName: string;
+
   incomes: Row[];
   expenses: Row[];
+
   pots: Pot[];
   savingsYear: SavingsYear;
 };
 
-const STORE_KEY = "familyBudgetPlanner:v3";
+const STORE_KEY = "familyBudgetPlanner:v4";
 
 /** ---------- Utils ---------- */
 const uid = () =>
@@ -49,11 +57,32 @@ function downloadText(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
+function sumByOwner(rows: Row[]) {
+  const acc = { joint: 0, A: 0, B: 0, total: 0 };
+  for (const r of rows) {
+    const owner: Owner = r.owner ?? "joint";
+    const val = safe(r.amount);
+    acc[owner] += val;
+    acc.total += val;
+  }
+  return {
+    joint: round2(acc.joint),
+    A: round2(acc.A),
+    B: round2(acc.B),
+    total: round2(acc.total),
+  };
+}
+
 /** ---------- Defaults ---------- */
 const initialPotId = uid();
 const defaultState: BudgetState = {
+  mode: "joint",
+  parentAName: "Parent A",
+  parentBName: "Parent B",
+
   incomes: [],
   expenses: [],
+
   pots: [{ id: initialPotId, name: "Savings" }],
   savingsYear: MONTHS.map((m) => ({ month: m, values: { [initialPotId]: 0 } })),
 };
@@ -116,7 +145,16 @@ export default function FamilyBudgetPlanner() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (!raw) return;
+
       const parsed = JSON.parse(raw) as Partial<BudgetState>;
+
+      // --- migration / guards ---
+      const mode: BudgetMode = parsed.mode === "split" ? "split" : "joint";
+      const parentAName = parsed.parentAName || "Parent A";
+      const parentBName = parsed.parentBName || "Parent B";
+
+      const incomes: Row[] = Array.isArray(parsed.incomes) ? parsed.incomes.map((r) => ({ ...r, owner: r.owner ?? "joint" })) : [];
+      const expenses: Row[] = Array.isArray(parsed.expenses) ? parsed.expenses.map((r) => ({ ...r, owner: r.owner ?? "joint" })) : [];
 
       let pots = parsed.pots && Array.isArray(parsed.pots) && parsed.pots.length > 0
         ? parsed.pots
@@ -139,8 +177,11 @@ export default function FamilyBudgetPlanner() {
       }
 
       setState({
-        incomes: Array.isArray(parsed.incomes) ? parsed.incomes as Row[] : [],
-        expenses: Array.isArray(parsed.expenses) ? parsed.expenses as Row[] : [],
+        mode,
+        parentAName,
+        parentBName,
+        incomes,
+        expenses,
         pots,
         savingsYear,
       });
@@ -153,14 +194,11 @@ export default function FamilyBudgetPlanner() {
   }, [state]);
 
   /** Totals */
-  const totalIncome = React.useMemo(
-    () => round2(state.incomes.reduce((s, r) => s + safe(r.amount), 0)),
-    [state.incomes]
-  );
-  const totalExpenses = React.useMemo(
-    () => round2(state.expenses.reduce((s, r) => s + safe(r.amount), 0)),
-    [state.expenses]
-  );
+  const incomeTotals = React.useMemo(() => sumByOwner(state.incomes), [state.incomes]);
+  const expenseTotals = React.useMemo(() => sumByOwner(state.expenses), [state.expenses]);
+
+  const totalIncome = incomeTotals.total;
+  const totalExpenses = expenseTotals.total;
 
   const monthRow = state.savingsYear[summaryMonthIdx] ?? state.savingsYear[0];
   const monthlySavings = React.useMemo(() => {
@@ -185,12 +223,12 @@ export default function FamilyBudgetPlanner() {
   /** Income/Expense handlers */
   const setIncome = (id: string, patch: Partial<Row>) =>
     setState((st) => ({ ...st, incomes: st.incomes.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
-  const addIncome = () => setState((st) => ({ ...st, incomes: [...st.incomes, { id: uid(), label: "", amount: 0 }] }));
+  const addIncome = () => setState((st) => ({ ...st, incomes: [...st.incomes, { id: uid(), label: "", amount: 0, owner: st.mode === "split" ? "A" : "joint" }] }));
   const rmIncome = (id: string) => setState((st) => ({ ...st, incomes: st.incomes.filter((r) => r.id !== id) }));
 
   const setExpense = (id: string, patch: Partial<Row>) =>
     setState((st) => ({ ...st, expenses: st.expenses.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
-  const addExpense = () => setState((st) => ({ ...st, expenses: [...st.expenses, { id: uid(), label: "", amount: 0 }] }));
+  const addExpense = () => setState((st) => ({ ...st, expenses: [...st.expenses, { id: uid(), label: "", amount: 0, owner: st.mode === "split" ? "A" : "joint" }] }));
   const rmExpense = (id: string) => setState((st) => ({ ...st, expenses: st.expenses.filter((r) => r.id !== id) }));
 
   /** Pots handlers */
@@ -228,9 +266,10 @@ export default function FamilyBudgetPlanner() {
   /** Export */
   const exportCSV = () => {
     const lines: string[] = [];
-    lines.push("Section,Label,Amount");
-    for (const r of state.incomes) lines.push(`Income,"${csv(r.label)}",${safe(r.amount)}`);
-    for (const r of state.expenses) lines.push(`Expense,"${csv(r.label)}",${safe(r.amount)}`);
+    lines.push("Section,Owner,Label,Amount");
+    const ownerLabel = (o?: Owner) => (o ?? "joint");
+    for (const r of state.incomes) lines.push(`Income,${ownerLabel(r.owner)},"${csv(r.label)}",${safe(r.amount)}`);
+    for (const r of state.expenses) lines.push(`Expense,${ownerLabel(r.owner)},"${csv(r.label)}",${safe(r.amount)}`);
     lines.push("");
     const potNames = state.pots.map((p) => `"${csv(p.name)}"`).join(",");
     lines.push(`Month,${potNames},Total`);
@@ -253,18 +292,55 @@ export default function FamilyBudgetPlanner() {
           <div className="lg:col-span-2">
             <div className="flex flex-wrap items-center gap-2 justify-between">
               <h2 className="text-lg font-medium">Summary</h2>
-              <label className="text-sm flex items-center gap-2">
-                <span>Summary month</span>
-                <select
-                  className="px-2 py-1 border rounded"
-                  value={summaryMonthIdx}
-                  onChange={(e) => setSummaryMonthIdx(parseInt(e.target.value, 10))}
+              <div className="flex items-center gap-2">
+                <label className="text-sm flex items-center gap-2">
+                  <span>Summary month</span>
+                  <select
+                    className="px-2 py-1 border rounded"
+                    value={summaryMonthIdx}
+                    onChange={(e) => setSummaryMonthIdx(parseInt(e.target.value, 10))}
+                  >
+                    {MONTHS.map((m, i) => (
+                      <option key={m} value={i}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            {/* Mode + names */}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <div className="inline-flex rounded-full border overflow-hidden">
+                <button
+                  className={`px-3 py-1.5 text-sm ${state.mode === "joint" ? "bg-[var(--accent-2)] text-white" : ""}`}
+                  onClick={() => setState((s) => ({ ...s, mode: "joint", incomes: s.incomes.map(r => ({...r, owner: r.owner ?? "joint"})), expenses: s.expenses.map(r => ({...r, owner: r.owner ?? "joint"})) }))}
                 >
-                  {MONTHS.map((m, i) => (
-                    <option key={m} value={i}>{m}</option>
-                  ))}
-                </select>
-              </label>
+                  Joint
+                </button>
+                <button
+                  className={`px-3 py-1.5 text-sm border-l ${state.mode === "split" ? "bg-[var(--accent)] text-white" : ""}`}
+                  onClick={() => setState((s) => ({ ...s, mode: "split" }))}
+                >
+                  Split by person
+                </button>
+              </div>
+
+              {state.mode === "split" && (
+                <div className="flex items-center gap-2">
+                  <input
+                    className="px-2 py-1 border rounded w-36"
+                    value={state.parentAName}
+                    onChange={(e) => setState((s) => ({ ...s, parentAName: e.target.value || "Parent A" }))}
+                    placeholder="Parent A"
+                  />
+                  <input
+                    className="px-2 py-1 border rounded w-36"
+                    value={state.parentBName}
+                    onChange={(e) => setState((s) => ({ ...s, parentBName: e.target.value || "Parent B" }))}
+                    placeholder="Parent B"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-2 gap-3">
@@ -273,8 +349,21 @@ export default function FamilyBudgetPlanner() {
               <Stat label={`Monthly savings (${MONTHS[summaryMonthIdx]})`} value={`- ${gbp(monthlySavings)}`} />
               <Stat label="Cash balance" value={gbp(cashBalance)} />
             </div>
+
+            {state.mode === "split" && (
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Stat label={`${state.parentAName} income`} value={gbp(incomeTotals.A)} />
+                <Stat label={`${state.parentBName} income`} value={gbp(incomeTotals.B)} />
+                <Stat label={`Joint income`} value={gbp(incomeTotals.joint)} />
+
+                <Stat label={`${state.parentAName} expenses`} value={gbp(expenseTotals.A)} />
+                <Stat label={`${state.parentBName} expenses`} value={gbp(expenseTotals.B)} />
+                <Stat label={`Joint expenses`} value={gbp(expenseTotals.joint)} />
+              </div>
+            )}
+
             <p className="text-xs opacity-70 mt-2">
-              Balance = income − expenses − pots for the selected month.
+              Balance = income − expenses − pots for the selected month. In split mode, rows are tagged per person or joint.
             </p>
           </div>
 
@@ -304,6 +393,9 @@ export default function FamilyBudgetPlanner() {
       {/* Editor (compact) */}
       <section className="card">
         <BudgetEditorCompact
+          mode={state.mode}
+          parentAName={state.parentAName}
+          parentBName={state.parentBName}
           incomes={state.incomes}
           expenses={state.expenses}
           onIncomeChange={(id, patch) => setIncome(id, patch)}
@@ -338,8 +430,8 @@ export default function FamilyBudgetPlanner() {
         </div>
 
         {/* Desktop table */}
-        <div className="hidden sm:block overflow-auto -mx-2">
-          <table className="min-w-[680px] mx-2">
+        <div className="hidden sm:block overflow-auto">
+          <table className="">
             <thead>
               <tr>
                 <th>Month</th>
@@ -496,6 +588,9 @@ function PotsCardsMobile({
 
 /** ---------- Editor (table + mobile list) ---------- */
 function BudgetEditorCompact({
+  mode,
+  parentAName,
+  parentBName,
   incomes,
   expenses,
   onIncomeChange,
@@ -505,10 +600,15 @@ function BudgetEditorCompact({
   onRemoveIncome,
   onRemoveExpense,
 }: {
-  incomes: { id: string; label: string; amount: number }[];
-  expenses: { id: string; label: string; amount: number }[];
-  onIncomeChange: (id: string, patch: Partial<{ label: string; amount: number }>) => void;
-  onExpenseChange: (id: string, patch: Partial<{ label: string; amount: number }>) => void;
+  mode: BudgetMode;
+  parentAName: string;
+  parentBName: string;
+
+  incomes: { id: string; label: string; amount: number; owner?: Owner }[];
+  expenses: { id: string; label: string; amount: number; owner?: Owner }[];
+
+  onIncomeChange: (id: string, patch: Partial<{ label: string; amount: number; owner: Owner }>) => void;
+  onExpenseChange: (id: string, patch: Partial<{ label: string; amount: number; owner: Owner }>) => void;
   onAddIncome: () => void;
   onAddExpense: () => void;
   onRemoveIncome: (id: string) => void;
@@ -517,6 +617,8 @@ function BudgetEditorCompact({
   const [tab, setTab] = React.useState<"income" | "expense">("income");
   const [q, setQ] = React.useState("");
   const [hideZero, setHideZero] = React.useState(false);
+  const [ownerFilter, setOwnerFilter] = React.useState<Owner | "all">("all");
+
   const rows = tab === "income" ? incomes : expenses;
   const onChange = tab === "income" ? onIncomeChange : onExpenseChange;
   const onAdd = tab === "income" ? onAddIncome : onAddExpense;
@@ -527,14 +629,26 @@ function BudgetEditorCompact({
     return rows.filter(r => {
       const match = !needle || (r.label || "").toLowerCase().includes(needle);
       const nonZero = !hideZero || Number(r.amount) !== 0;
-      return match && nonZero;
+      const owner = r.owner ?? "joint";
+      const ownerOk = ownerFilter === "all" || owner === ownerFilter;
+      return match && nonZero && ownerOk;
     });
-  }, [rows, q, hideZero]);
+  }, [rows, q, hideZero, ownerFilter]);
 
   const total = React.useMemo(
     () => Math.round(filtered.reduce((s, r) => s + (Number.isFinite(r.amount) ? r.amount : 0), 0) * 100) / 100,
     [filtered]
   );
+
+  const OwnerBadge = ({ owner }: { owner: Owner }) => {
+    const map: Record<Owner, string> = {
+      joint: "bg-gray-100 text-gray-700",
+      A: "bg-[var(--accent-2)]/15 text-[var(--accent-2)]",
+      B: "bg-[var(--accent)]/15 text-[var(--accent)]",
+    };
+    const txt = owner === "joint" ? "Joint" : owner === "A" ? parentAName : parentBName;
+    return <span className={`px-2 py-0.5 rounded-full text-[11px] ${map[owner]}`}>{txt}</span>;
+  };
 
   return (
     <div className="space-y-4">
@@ -573,17 +687,48 @@ function BudgetEditorCompact({
         </div>
       </div>
 
+      {/* Owner filter (split mode only) */}
+      {mode === "split" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm opacity-70">Filter:</span>
+          <div className="inline-flex rounded-full border overflow-hidden">
+            {(["all","joint","A","B"] as const).map((o) => (
+              <button
+                key={o}
+                className={`px-3 py-1.5 text-sm ${ownerFilter === o ? "bg-[var(--card-bg2)] font-medium" : ""}`}
+                onClick={() => setOwnerFilter(o)}
+              >
+                {o === "all" ? "All" : o === "joint" ? "Joint" : o === "A" ? parentAName : parentBName}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Mobile card list */}
       <div className="sm:hidden space-y-2">
         {filtered.map((r, idx) => (
           <div key={r.id} className="border rounded-xl p-3">
-            <input
-              className="w-full bg-transparent outline-none mb-2"
-              placeholder="Label"
-              value={r.label}
-              onChange={(e) => onChange(r.id, { label: e.target.value })}
-              autoFocus={idx === filtered.length - 1 && !r.label}
-            />
+            <div className="flex items-center justify-between mb-2">
+              <input
+                className="flex-1 bg-transparent outline-none mr-2"
+                placeholder="Label"
+                value={r.label}
+                onChange={(e) => onChange(r.id, { label: e.target.value })}
+                autoFocus={idx === filtered.length - 1 && !r.label}
+              />
+              {mode === "split" && (
+                <select
+                  className="px-2 py-1 border rounded text-sm"
+                  value={r.owner ?? "joint"}
+                  onChange={(e) => onChange(r.id, { owner: e.target.value as Owner })}
+                >
+                  <option value="joint">Joint</option>
+                  <option value="A">{parentAName}</option>
+                  <option value="B">{parentBName}</option>
+                </select>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -599,6 +744,9 @@ function BudgetEditorCompact({
                 <span aria-hidden>🗑️</span>
               </button>
             </div>
+            {mode === "split" && (
+              <div className="mt-2"><OwnerBadge owner={r.owner ?? "joint"} /></div>
+            )}
           </div>
         ))}
         {filtered.length === 0 && (
@@ -627,24 +775,60 @@ function BudgetEditorCompact({
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white">
               <tr>
-                <th className="text-left px-3 py-2 w-[60%]">Label</th>
-                <th className="text-right px-3 py-2 w-[30%]">Amount (£)</th>
-                <th className="px-2 py-2 w-[10%] text-right">Actions</th>
+                <th className="text-left px-3 py-2 w-[48%]">Label</th>
+                {mode === "split" && <th className="text-left px-3 py-2 w-[22%]">Owner</th>}
+                <th className="text-right px-3 py-2 w-[22%]">Amount (£)</th>
+                <th className="px-2 py-2 w-[8%] text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="[&>tr:nth-child(even)]:bg-[rgba(0,0,0,0.02)]">
               {filtered.map((r, idx) => (
-                <CompactRow
-                  key={r.id}
-                  row={r}
-                  autoFocus={idx === filtered.length - 1}
-                  onChange={(patch) => onChange(r.id, patch)}
-                  onRemove={() => onRemove(r.id)}
-                />
+                <tr key={r.id} className="group">
+                  <td className="px-3 py-2">
+                    <input
+                      className="w-full bg-transparent outline-none"
+                      placeholder="Label"
+                      value={r.label}
+                      onChange={(e) => onChange(r.id, { label: e.target.value })}
+                      autoFocus={idx === filtered.length - 1 && !r.label}
+                    />
+                  </td>
+                  {mode === "split" && (
+                    <td className="px-3 py-2">
+                      <select
+                        className="px-2 py-1 border rounded w-full"
+                        value={r.owner ?? "joint"}
+                        onChange={(e) => onChange(r.id, { owner: e.target.value as Owner })}
+                      >
+                        <option value="joint">Joint</option>
+                        <option value="A">{parentAName}</option>
+                        <option value="B">{parentBName}</option>
+                      </select>
+                    </td>
+                  )}
+                  <td className="px-3 py-2 text-right">
+                    <input
+                      type="number"
+                      step={0.01}
+                      className="w-28 sm:w-36 text-right bg-transparent outline-none border rounded-lg px-2 py-1"
+                      value={Number.isFinite(r.amount) ? r.amount : 0}
+                      onChange={(e) => onChange(r.id, { amount: parseFloat(e.target.value || "0") })}
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <button
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border opacity-0 group-hover:opacity-100 transition"
+                      onClick={() => onRemove(r.id)}
+                      aria-label="Remove row"
+                    >
+                      <span aria-hidden>🗑️</span>
+                    </button>
+                  </td>
+                </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-3 py-6 text-center text-sm opacity-70">
+                  <td colSpan={mode === "split" ? 4 : 3} className="px-3 py-6 text-center text-sm opacity-70">
                     No rows. Add one below.
                   </td>
                 </tr>
@@ -671,50 +855,6 @@ function BudgetEditorCompact({
         </div>
       </div>
     </div>
-  );
-}
-
-function CompactRow({
-  row,
-  autoFocus,
-  onChange,
-  onRemove,
-}: {
-  row: { id: string; label: string; amount: number };
-  autoFocus?: boolean;
-  onChange: (patch: Partial<{ label: string; amount: number }>) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <tr className="group">
-      <td className="px-3 py-2">
-        <input
-          className="w-full bg-transparent outline-none"
-          placeholder="Label"
-          value={row.label}
-          onChange={(e) => onChange({ label: e.target.value })}
-          autoFocus={autoFocus && !row.label}
-        />
-      </td>
-      <td className="px-3 py-2 text-right">
-        <input
-          type="number"
-          step={0.01}
-          className="w-28 sm:w-36 text-right bg-transparent outline-none border rounded-lg px-2 py-1"
-          value={Number.isFinite(row.amount) ? row.amount : 0}
-          onChange={(e) => onChange({ amount: parseFloat(e.target.value || "0") })}
-        />
-      </td>
-      <td className="px-2 py-2 text-right">
-        <button
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border opacity-0 group-hover:opacity-100 transition"
-          onClick={onRemove}
-          aria-label="Remove row"
-        >
-          <span aria-hidden>🗑️</span>
-        </button>
-      </td>
-    </tr>
   );
 }
 

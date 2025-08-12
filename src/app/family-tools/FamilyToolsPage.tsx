@@ -17,11 +17,9 @@ export default function FamilyToolsPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+    <div className="max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
       <header className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
-        <h1 className="text-2xl sm:text-3xl font-semibold">Family Planner</h1>
-
         <nav
           role="tablist"
           aria-label="Planner tabs"
@@ -65,7 +63,7 @@ export default function FamilyToolsPage() {
               `}
               onClick={() => setTab("nursery")}
             >
-              Nursery Costs
+              Childcare Costs
             </button>
 
             <button

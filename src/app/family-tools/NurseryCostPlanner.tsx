@@ -1,6 +1,7 @@
 "use client";
 import React, { useMemo, useState } from "react";
 
+/** ---------------- Types ---------------- */
 type TimeStr = `${number}:${number}`;
 type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri";
 type YearMode = "FULL_YEAR" | "TERM_TIME";
@@ -14,7 +15,8 @@ interface Sessions {
 interface DayPlan { start?: TimeStr; end?: TimeStr; }
 type WeekPlan = Record<DayKey, DayPlan>;
 interface ChildProfile {
-  id: string; name: string; ageYears: number; week: WeekPlan; tfcMonthlyCap: number; rates: Rates; sessions: Sessions;
+  id: string; name: string; ageYears: number; week: WeekPlan;
+  tfcMonthlyCap: number; rates: Rates; sessions: Sessions;
 }
 
 /** ---------------- Helpers ---------------- */
@@ -22,23 +24,35 @@ const dayKeys: DayKey[] = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const emptyWeek: WeekPlan = { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} };
 
 function parseTimeToMinutes(t?: TimeStr): number | null {
-  if (!t) return null; const [h, m] = t.split(":").map(Number);
+  if (!t) return null;
+  const [h, m] = t.split(":").map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
 }
 function minutesBetween(start?: TimeStr, end?: TimeStr): number {
-  const s = parseTimeToMinutes(start); const e = parseTimeToMinutes(end);
-  if (s == null || e == null) return 0; if (e <= s) return 0; return e - s;
+  const s = parseTimeToMinutes(start);
+  const e = parseTimeToMinutes(end);
+  if (s == null || e == null) return 0;
+  if (e <= s) return 0;
+  return e - s;
 }
 function overlapMinutes(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
-  const start = Math.max(aStart, bStart); const end = Math.min(aEnd, bEnd);
+  const start = Math.max(aStart, bStart);
+  const end = Math.min(aEnd, bEnd);
   return Math.max(0, end - start);
 }
 function roundUpMinutes(mins: number, increment: number): number {
-  if (increment <= 1) return mins; return Math.ceil(mins / increment) * increment;
+  if (increment <= 1) return mins;
+  return Math.ceil(mins / increment) * increment;
 }
-function gbp(n: number): string { return n.toLocaleString("en-GB", { style: "currency", currency: "GBP" }); }
-function uid() { return (typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : Math.random().toString(36).slice(2); }
+function gbp(n: number): string {
+  return n.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
+}
+function uid() {
+  return (typeof crypto !== "undefined" && "randomUUID" in crypto)
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+}
 
 function calcWeekForChild(
   week: WeekPlan, rates: Rates, sessions: Sessions
@@ -78,28 +92,32 @@ function calcWeekForChild(
     const candHourly = { label: "Hourly", cost: Math.round(hourlyCostFor(mins) * 100) / 100 };
 
     let sessionsOnlyCost = 0;
-    const sessionParts: string[] = [];
-    if (amOverlap > 0) { sessionsOnlyCost += rates.am; sessionParts.push("AM"); }
-    if (pmOverlap > 0) { sessionsOnlyCost += rates.pm; sessionParts.push("PM"); }
+    const parts: string[] = [];
+    if (amOverlap > 0) { sessionsOnlyCost += rates.am; parts.push("AM"); }
+    if (pmOverlap > 0) { sessionsOnlyCost += rates.pm; parts.push("PM"); }
     const candSessionsOnly = {
-      label: sessionParts.length ? `${sessionParts.join("+")} session${sessionParts.length > 1 ? "s" : ""}` : "Hourly",
-      cost: sessionParts.length ? Math.round(sessionsOnlyCost * 100) / 100 : Math.round(hourlyCostFor(mins) * 100) / 100,
+      label: parts.length ? `${parts.join("+")} session${parts.length > 1 ? "s" : ""}` : "Hourly",
+      cost: parts.length ? Math.round(sessionsOnlyCost * 100) / 100 : Math.round(hourlyCostFor(mins) * 100) / 100,
     };
 
     let candAmPlusHourly = { label: "AM session + hourly", cost: Number.POSITIVE_INFINITY };
     if (amOverlap > 0) {
       const extraBeforeAM = s < amS ? amS - s : 0;
       const extraAfterAM = e > amE ? e - Math.max(s, amE) : 0;
-      const amPlusHourlyCost = rates.am + hourlyCostFor(extraBeforeAM + extraAfterAM);
-      candAmPlusHourly = { label: "AM session + hourly", cost: Math.round(amPlusHourlyCost * 100) / 100 };
+      candAmPlusHourly = {
+        label: "AM session + hourly",
+        cost: Math.round((rates.am + hourlyCostFor(extraBeforeAM + extraAfterAM)) * 100) / 100
+      };
     }
 
     let candPmPlusHourly = { label: "PM session + hourly", cost: Number.POSITIVE_INFINITY };
     if (pmOverlap > 0) {
       const extraBeforePM = s < pmS ? pmS - s : 0;
       const extraAfterPM = e > pmE ? e - Math.max(s, pmE) : 0;
-      const pmPlusHourlyCost = rates.pm + hourlyCostFor(extraBeforePM + extraAfterPM);
-      candPmPlusHourly = { label: "PM session + hourly", cost: Math.round(pmPlusHourlyCost * 100) / 100 };
+      candPmPlusHourly = {
+        label: "PM session + hourly",
+        cost: Math.round((rates.pm + hourlyCostFor(extraBeforePM + extraAfterPM)) * 100) / 100
+      };
     }
 
     let candBothSessionsPlusEdges = { label: "AM+PM sessions", cost: Number.POSITIVE_INFINITY };
@@ -107,8 +125,10 @@ function calcWeekForChild(
     if (amOverlap > 0 && pmOverlap > 0) {
       const extraBeforeAM = s < amS ? amS - s : 0;
       const extraAfterPM = e > pmE ? e - Math.max(s, pmE) : 0;
-      const bothSessionsCost = rates.am + rates.pm + hourlyCostFor(extraBeforeAM + extraAfterPM);
-      candBothSessionsPlusEdges = { label: "AM+PM sessions", cost: Math.round(bothSessionsCost * 100) / 100 };
+      candBothSessionsPlusEdges = {
+        label: "AM+PM sessions",
+        cost: Math.round((rates.am + rates.pm + hourlyCostFor(extraBeforeAM + extraAfterPM)) * 100) / 100
+      };
     }
     const candDayRate = { label: "Day rate", cost: dayRateEligible ? Math.round(rates.day * 100) / 100 : Number.POSITIVE_INFINITY };
 
@@ -122,51 +142,161 @@ function calcWeekForChild(
   return { perDay, weeklyTotal, attendedMinutes };
 }
 
+/** ---------------- Persistence helpers ---------------- */
+const NURSERY_STORE_KEY = "nurseryPlanner:v1";
+
+function safeNum(n: any, fallback = 0) {
+  const v = typeof n === "number" ? n : parseFloat(n ?? "0");
+  return Number.isFinite(v) ? v : fallback;
+}
+
+function reviveChild(
+  raw: Partial<ChildProfile>,
+  defaults: { rates: Rates; sessions: Sessions }
+): ChildProfile {
+  // week
+  const weekRaw = (raw?.week ?? {}) as Partial<Record<DayKey, Partial<DayPlan>>>;
+  const week: WeekPlan = { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} };
+  for (const d of dayKeys) {
+    const r = weekRaw[d] ?? {};
+    week[d] = {
+      start: typeof r.start === "string" && /^\d{2}:\d{2}$/.test(r.start) ? (r.start as TimeStr) : undefined,
+      end:   typeof r.end   === "string" && /^\d{2}:\d{2}$/.test(r.end)   ? (r.end as TimeStr)   : undefined,
+    };
+  }
+
+  // rates
+  const ratesRaw = (raw?.rates ?? {}) as Partial<Rates>;
+  const rates: Rates = {
+    am:     safeNum(ratesRaw.am,     defaults.rates.am),
+    pm:     safeNum(ratesRaw.pm,     defaults.rates.pm),
+    day:    safeNum(ratesRaw.day,    defaults.rates.day),
+    hourly: safeNum(ratesRaw.hourly, defaults.rates.hourly),
+  };
+
+  // sessions
+  const s = (raw?.sessions ?? {}) as Partial<Sessions>;
+  const sessions: Sessions = {
+    amStart: typeof s.amStart === "string" && /^\d{2}:\d{2}$/.test(s.amStart) ? (s.amStart as TimeStr) : defaults.sessions.amStart,
+    amEnd:   typeof s.amEnd   === "string" && /^\d{2}:\d{2}$/.test(s.amEnd)   ? (s.amEnd   as TimeStr) : defaults.sessions.amEnd,
+    pmStart: typeof s.pmStart === "string" && /^\d{2}:\d{2}$/.test(s.pmStart) ? (s.pmStart as TimeStr) : defaults.sessions.pmStart,
+    pmEnd:   typeof s.pmEnd   === "string" && /^\d{2}:\d{2}$/.test(s.pmEnd)   ? (s.pmEnd   as TimeStr) : defaults.sessions.pmEnd,
+    fullDayHours:          safeNum(s.fullDayHours,          defaults.sessions.fullDayHours),
+    hourlyRoundingMinutes: safeNum(s.hourlyRoundingMinutes, defaults.sessions.hourlyRoundingMinutes),
+    sessionTriggerMinutes: safeNum(s.sessionTriggerMinutes, defaults.sessions.sessionTriggerMinutes),
+  };
+
+  return {
+    id: typeof raw.id === "string" ? raw.id : uid(),
+    name: typeof raw.name === "string" ? raw.name : "Child 1",
+    ageYears: safeNum(raw.ageYears, 3),
+    tfcMonthlyCap: safeNum(raw.tfcMonthlyCap, 166.67),
+    week,
+    rates,
+    sessions,
+  };
+}
+
 /** ---------------- Page ---------------- */
 export default function NurseryPlannerPage() {
+  // global mode
   const [yearMode, setYearMode] = useState<YearMode>("FULL_YEAR");
   const [termWeeks, setTermWeeks] = useState<number>(38);
-  const [activeChildId, setActiveChildId] = useState<string>("");
 
+  // children
   const defaultRates: Rates = { am: 28, pm: 28, day: 55, hourly: 7.5 };
   const defaultSessions: Sessions = {
     amStart: "08:00", amEnd: "12:30", pmStart: "13:00", pmEnd: "18:00",
     fullDayHours: 8.5, hourlyRoundingMinutes: 15, sessionTriggerMinutes: 60,
   };
 
-  const [children, setChildren] = useState<ChildProfile[]>([
-    {
-      id: uid(), name: "Child 1", ageYears: 3, week: structuredClone(emptyWeek),
-      tfcMonthlyCap: 166.67, rates: { ...defaultRates }, sessions: { ...defaultSessions },
-    },
-  ]);
+  const [loaded, setLoaded] = useState(false);
+  const [children, setChildren] = useState<ChildProfile[]>([]);
+  const [activeChildId, setActiveChildId] = useState<string>("");
 
+  // restore on mount
   React.useEffect(() => {
-    if (!activeChildId && children.length) setActiveChildId(children[0].id);
-  }, [children, activeChildId]);
+    try {
+      const raw = localStorage.getItem(NURSERY_STORE_KEY);
+      const parsed = raw ? JSON.parse(raw) as {
+        v?: number; yearMode?: YearMode; termWeeks?: number;
+        activeChildId?: string; children?: Partial<ChildProfile>[];
+      } : null;
 
+      const restoredChildren =
+        (parsed?.children ?? []).map((c) =>
+          reviveChild(c, { rates: defaultRates, sessions: defaultSessions })
+        );
+
+      if (restoredChildren.length > 0) {
+        setChildren(restoredChildren);
+        setActiveChildId(
+          restoredChildren.some(c => c.id === parsed?.activeChildId)
+            ? (parsed!.activeChildId as string)
+            : restoredChildren[0].id
+        );
+      } else {
+        // first run → create a starter child
+        const firstId = uid();
+        setChildren([{
+          id: firstId,
+          name: "Child 1",
+          ageYears: 3,
+          week: structuredClone(emptyWeek),
+          tfcMonthlyCap: 166.67,
+          rates: { ...defaultRates },
+          sessions: { ...defaultSessions },
+        }]);
+        setActiveChildId(firstId);
+      }
+
+      setYearMode(parsed?.yearMode === "TERM_TIME" ? "TERM_TIME" : "FULL_YEAR");
+      setTermWeeks(safeNum(parsed?.termWeeks, 38));
+    } catch (e) {
+      console.warn("Nursery restore failed:", e);
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+
+  // keep activeChildId valid if children change
+  React.useEffect(() => {
+    if (!loaded || children.length === 0) return;
+    if (!children.some(c => c.id === activeChildId)) {
+      setActiveChildId(children[0].id);
+    }
+  }, [loaded, children, activeChildId]);
+
+  // actions
   const addChild = () => {
     const id = uid();
-    setChildren((prev) => [
+    setChildren(prev => [
       ...prev,
       {
-        id, name: `Child ${prev.length + 1}`, ageYears: 3, week: structuredClone(emptyWeek),
-        tfcMonthlyCap: 166.67, rates: { ...defaultRates }, sessions: { ...defaultSessions },
+        id,
+        name: `Child ${prev.length + 1}`,
+        ageYears: 3,
+        week: structuredClone(emptyWeek),
+        tfcMonthlyCap: 166.67,
+        rates: { ...defaultRates },
+        sessions: { ...defaultSessions },
       },
     ]);
     setActiveChildId(id);
   };
-  const removeChild = (id: string) => {
-    setChildren((prev) => prev.filter((c) => c.id !== id));
-    if (activeChildId === id) {
-      const remaining = children.filter((c) => c.id !== id);
-      setActiveChildId(remaining[0]?.id ?? "");
-    }
-  };
-  const updateChild = (id: string, patch: Partial<ChildProfile>) =>
-    setChildren((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
 
-  // Factors
+  const removeChild = (id: string) => {
+    setChildren(prev => {
+      const next = prev.filter(c => c.id !== id);
+      if (activeChildId === id) setActiveChildId(next[0]?.id ?? "");
+      return next;
+    });
+  };
+
+  const updateChild = (id: string, patch: Partial<ChildProfile>) =>
+    setChildren(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
+
+  // conversion factors
   const factors = useMemo(() => {
     const weeksPerYear = yearMode === "FULL_YEAR" ? 50 : termWeeks;
     const monthlyDivisor = yearMode === "TERM_TIME" ? 11 : 12;
@@ -174,6 +304,7 @@ export default function NurseryPlannerPage() {
     return { weeksPerYear, monthlyDivisor, monthlyFactor };
   }, [yearMode, termWeeks]);
 
+  // results
   const results = useMemo(() => {
     const perChild = children.map((child) => {
       const weekCalc = calcWeekForChild(child.week, child.rates, child.sessions);
@@ -217,8 +348,35 @@ export default function NurseryPlannerPage() {
     return { perChild, familyMonthlyInvoice, familyTfcTopUp, familyParentNet };
   }, [children, factors, yearMode]);
 
-  const activeChild = children.find((c) => c.id === activeChildId);
-  const activeCalc = results.perChild.find((c) => c.id === activeChildId);
+  // safe active child for render
+  const activeChild = children.find((c) => c.id === activeChildId) ?? children[0];
+  const activeCalc =
+    results.perChild.find((c) => c.id === activeChildId) ??
+    (activeChild ? results.perChild.find((c) => c.id === activeChild.id) : undefined);
+
+  // persist (debounced a tad)
+  React.useEffect(() => {
+    if (!loaded) return;
+    const id = window.setTimeout(() => {
+      try {
+        const payload = { v: 1, yearMode, termWeeks, activeChildId, children };
+        localStorage.setItem(NURSERY_STORE_KEY, JSON.stringify(payload));
+      } catch (e) {
+        console.warn("Nursery persist failed:", e);
+      }
+    }, 100);
+    return () => window.clearTimeout(id);
+  }, [loaded, yearMode, termWeeks, activeChildId, children]);
+
+  // tiny loader to avoid flicker
+  if (!loaded) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+        <div className="h-6 w-48 bg-gray-100 rounded" />
+        <div className="h-40 bg-gray-50 rounded-xl border" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6">
@@ -249,8 +407,8 @@ export default function NurseryPlannerPage() {
         </div>
       )}
 
-      {/* Tabs header (scrollable on mobile) */}
-      <section className="card">
+      {/* Tabs header */}
+      <section className="lgcard">
         <div className="flex items-center gap-2 border-b pb-2">
           <div className="flex-1 -mx-2 px-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <div className="inline-flex gap-2">
@@ -259,7 +417,7 @@ export default function NurseryPlannerPage() {
                   key={child.id}
                   onClick={() => setActiveChildId(child.id)}
                   className={`shrink-0 px-3 sm:px-4 py-2 rounded-full border text-sm
-                    ${activeChildId === child.id ? "bg-white font-semibold shadow-sm" : "bg-gray-100 hover:bg-gray-50"}`}
+                    ${activeChild?.id === child.id ? "bg-white font-semibold shadow-sm" : "bg-gray-100 hover:bg-gray-50"}`}
                 >
                   {child.name}
                 </button>
@@ -275,7 +433,7 @@ export default function NurseryPlannerPage() {
         </div>
 
         {/* Active child content */}
-        {activeChild ? (
+        {children.length > 0 && activeChild ? (
           <div className="space-y-6 pt-4">
             {/* Child meta controls */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -363,7 +521,7 @@ export default function NurseryPlannerPage() {
                   className="text-sm px-3 py-1.5 rounded-full border hover:bg-gray-50"
                   onClick={() => {
                     const mon = activeChild.week.Mon;
-                    if (!mon.start || !mon.end) return;
+                    if (!mon?.start || !mon?.end) return;
                     updateChild(activeChild.id, {
                       week: { Mon: { ...mon }, Tue: { ...mon }, Wed: { ...mon }, Thu: { ...mon }, Fri: { ...mon } },
                     });
@@ -465,9 +623,7 @@ export default function NurseryPlannerPage() {
           <Stat label="Combined parent net monthly" value={gbp(results.familyParentNet)} />
         </div>
         <p className="text-xs opacity-70 mt-3">
-          Monthly = weekly (after funding) × (
-          {yearMode === "FULL_YEAR" ? "50 ÷ 12" : `${termWeeks} ÷ 11`}
-          ). TFC applies after funding.
+          Monthly = weekly (after funding) × ({yearMode === "FULL_YEAR" ? "50 ÷ 12" : `${termWeeks} ÷ 11`}). TFC applies after funding.
         </p>
       </section>
     </div>

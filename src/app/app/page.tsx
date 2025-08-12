@@ -37,11 +37,9 @@ export default function AppHome() {
   const user = session.user;
 
   return (
-    <div className="p-6 space-y-4">
-      {/* App header */}
+    <div className="p-2 space-y-4">
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Family Planner</h1>
-
         <div className="flex items-center gap-2">
           <UserChip user={user} />
           <button
@@ -54,8 +52,6 @@ export default function AppHome() {
           </button>
         </div>
       </header>
-
-      {/* Your app */}
       <FamilyToolsPage />
     </div>
   );

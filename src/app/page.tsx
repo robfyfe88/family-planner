@@ -4,8 +4,7 @@ import SignInButton from "@/components/SignInButton";
 export default function LandingPage() {
   return (
     <main className="min-h-dvh">
-      {/* Header */}
-      <header className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+      <header className="max-w-6xl mx-auto px-4 sm:px-2 py-4 flex items-center justify-between">
         <Link href="/" className="inline-flex items-center gap-2 font-semibold">
           <span className="text-xl">👨‍👩‍👧‍👦</span>
           <span>Family Planner</span>
@@ -21,7 +20,6 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-20">
         <div className="grid lg:grid-cols-2 gap-10 items-center">
           <div>
@@ -48,7 +46,7 @@ export default function LandingPage() {
               <span className="badge badge-yellow">Mobile friendly</span>
             </div>
           </div>
-          
+
           <div className="card p-0 overflow-hidden">
             <div className="bg-gradient-to-br from-[var(--accent-3)]/20 to-transparent p-6">
               <div className="text-sm opacity-80 mb-2">Preview</div>
@@ -71,7 +69,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features */}
       <section id="features" className="max-w-6xl mx-auto px-4 sm:px-6 py-12 grid lg:grid-cols-3 gap-6">
         <div className="card">
           <h3 className="text-lg font-medium mb-2">Smart leave planning</h3>
@@ -96,7 +93,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* How it works */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <div className="card">
           <h2 className="text-xl font-semibold mb-3">How it works</h2>
@@ -120,7 +116,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing (starter) */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <div className="grid md:grid-cols-3 gap-6">
           <div className="card">
@@ -154,7 +149,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="max-w-6xl mx-auto px-4 sm:px-6 py-10 text-sm opacity-70">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>© {new Date().getFullYear()} Family Planner</div>
