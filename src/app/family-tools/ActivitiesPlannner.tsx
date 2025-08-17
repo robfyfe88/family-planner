@@ -509,7 +509,14 @@ export default function ActivitiesPlanner() {
                                 >
                                     <div className="text-xs mb-1 flex items-center justify-between">
                                         <span className={`px-1.5 py-0.5 rounded ${within ? "" : "opacity-60"}`}>{d.getDate()}</span>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openForCreate(id, id); }}>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onPointerUp={(e) => e.stopPropagation()}
+                                            onClick={(e) => { e.stopPropagation(); openForCreate(id, id); }}
+                                        >
                                             <CalendarPlus />
                                         </Button>
                                     </div>
@@ -845,6 +852,8 @@ function ActivityChip({
 
     return (
         <span
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
             onClick={handleClick}
             onKeyDown={handleKey}
             role={interactive ? "button" : undefined}
