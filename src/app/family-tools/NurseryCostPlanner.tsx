@@ -4,16 +4,7 @@ import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
-/** ---------------- Types ---------------- */
 type TimeStr = `${number}:${number}`;
 type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri";
 type YearMode = "FULL_YEAR" | "TERM_TIME";
@@ -31,7 +22,6 @@ interface ChildProfile {
   tfcMonthlyCap: number; rates: Rates; sessions: Sessions;
 }
 
-/** ---------------- Helpers ---------------- */
 const dayKeys: DayKey[] = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const emptyWeek: WeekPlan = { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} };
 
@@ -66,7 +56,6 @@ function uid() {
     : Math.random().toString(36).slice(2);
 }
 
-/** Select-all + no accidental wheel/arrow increments for number inputs */
 function useNumberInputUX() {
   return {
     onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.currentTarget.select(),
@@ -166,7 +155,6 @@ function calcWeekForChild(
   return { perDay, weeklyTotal, attendedMinutes };
 }
 
-/** ---------------- Persistence helpers ---------------- */
 const NURSERY_STORE_KEY = "nurseryPlanner:v1";
 
 function safeNum(n: any, fallback = 0) {
@@ -178,7 +166,6 @@ function reviveChild(
   raw: Partial<ChildProfile>,
   defaults: { rates: Rates; sessions: Sessions }
 ): ChildProfile {
-  // week
   const weekRaw = (raw?.week ?? {}) as Partial<Record<DayKey, Partial<DayPlan>>>;
   const week: WeekPlan = { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} };
   for (const d of dayKeys) {
@@ -189,7 +176,6 @@ function reviveChild(
     };
   }
 
-  // rates
   const ratesRaw = (raw?.rates ?? {}) as Partial<Rates>;
   const rates: Rates = {
     am:     safeNum(ratesRaw.am,     defaults.rates.am),
@@ -198,7 +184,6 @@ function reviveChild(
     hourly: safeNum(ratesRaw.hourly, defaults.rates.hourly),
   };
 
-  // sessions
   const s = (raw?.sessions ?? {}) as Partial<Sessions>;
   const sessions: Sessions = {
     amStart: typeof s.amStart === "string" && /^\d{2}:\d{2}$/.test(s.amStart) ? (s.amStart as TimeStr) : defaults.sessions.amStart,
@@ -221,13 +206,10 @@ function reviveChild(
   };
 }
 
-/** ---------------- Page ---------------- */
 export default function NurseryPlannerPage() {
-  // global mode
   const [yearMode, setYearMode] = useState<YearMode>("FULL_YEAR");
   const [termWeeks, setTermWeeks] = useState<number>(38);
 
-  // children
   const defaultRates: Rates = { am: 28, pm: 28, day: 55, hourly: 7.5 };
   const defaultSessions: Sessions = {
     amStart: "08:00", amEnd: "12:30", pmStart: "13:00", pmEnd: "18:00",
@@ -238,7 +220,6 @@ export default function NurseryPlannerPage() {
   const [children, setChildren] = useState<ChildProfile[]>([]);
   const [activeChildId, setActiveChildId] = useState<string>("");
 
-  // restore on mount
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(NURSERY_STORE_KEY);
@@ -260,7 +241,6 @@ export default function NurseryPlannerPage() {
             : restoredChildren[0].id
         );
       } else {
-        // first run → create a starter child
         const firstId = uid();
         setChildren([{
           id: firstId,
@@ -283,7 +263,6 @@ export default function NurseryPlannerPage() {
     }
   }, []);
 
-  // keep activeChildId valid if children change
   React.useEffect(() => {
     if (!loaded || children.length === 0) return;
     if (!children.some(c => c.id === activeChildId)) {
@@ -291,7 +270,6 @@ export default function NurseryPlannerPage() {
     }
   }, [loaded, children, activeChildId]);
 
-  // actions
   const addChild = () => {
     const id = uid();
     setChildren(prev => [
@@ -320,7 +298,6 @@ export default function NurseryPlannerPage() {
   const updateChild = (id: string, patch: Partial<ChildProfile>) =>
     setChildren(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
 
-  // conversion factors
   const factors = useMemo(() => {
     const weeksPerYear = yearMode === "FULL_YEAR" ? 50 : termWeeks;
     const monthlyDivisor = yearMode === "TERM_TIME" ? 11 : 12;
@@ -328,7 +305,6 @@ export default function NurseryPlannerPage() {
     return { weeksPerYear, monthlyDivisor, monthlyFactor };
   }, [yearMode, termWeeks]);
 
-  // results
   const results = useMemo(() => {
     const perChild = children.map((child) => {
       const weekCalc = calcWeekForChild(child.week, child.rates, child.sessions);
@@ -372,13 +348,11 @@ export default function NurseryPlannerPage() {
     return { perChild, familyMonthlyInvoice, familyTfcTopUp, familyParentNet };
   }, [children, factors, yearMode]);
 
-  // safe active child for render
   const activeChild = children.find((c) => c.id === activeChildId) ?? children[0];
   const activeCalc =
     results.perChild.find((c) => c.id === activeChildId) ??
     (activeChild ? results.perChild.find((c) => c.id === activeChild.id) : undefined);
 
-  // persist (debounced a tad)
   React.useEffect(() => {
     if (!loaded) return;
     const id = window.setTimeout(() => {
@@ -392,7 +366,6 @@ export default function NurseryPlannerPage() {
     return () => window.clearTimeout(id);
   }, [loaded, yearMode, termWeeks, activeChildId, children]);
 
-  // tiny loader to avoid flicker
   if (!loaded) {
     return (
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-4">
@@ -404,7 +377,6 @@ export default function NurseryPlannerPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6">
-      {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold">Nursery Cost Planner</h1>
@@ -416,7 +388,6 @@ export default function NurseryPlannerPage() {
         <YearModeToggle yearMode={yearMode} setYearMode={setYearMode} />
       </header>
 
-      {/* Term weeks */}
       {yearMode === "TERM_TIME" && (
         <div className="card flex flex-col sm:flex-row sm:items-end gap-4">
           <NumberField
@@ -430,7 +401,6 @@ export default function NurseryPlannerPage() {
         </div>
       )}
 
-      {/* Tabs header */}
       <section className="lgcard">
         <div className="flex items-center gap-2 border-b pb-2">
           <div className="flex-1 -mx-2 px-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -456,10 +426,8 @@ export default function NurseryPlannerPage() {
           </Button>
         </div>
 
-        {/* Active child content */}
         {children.length > 0 && activeChild ? (
           <div className="space-y-6 pt-4">
-            {/* Child meta controls */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex flex-col gap-1">
@@ -499,7 +467,6 @@ export default function NurseryPlannerPage() {
               )}
             </div>
 
-            {/* Rates */}
             <section className="card">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base sm:text-lg font-medium">Rates for {activeChild.name}</h2>
@@ -535,7 +502,6 @@ export default function NurseryPlannerPage() {
               </div>
             </section>
 
-            {/* Sessions */}
             <section className="card">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base sm:text-lg font-medium">Sessions</h2>
@@ -579,7 +545,6 @@ export default function NurseryPlannerPage() {
               </div>
             </section>
 
-            {/* Weekly timetable */}
             <section className="card">
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">Timetable</div>
@@ -629,7 +594,6 @@ export default function NurseryPlannerPage() {
               </div>
             </section>
 
-            {/* Per-child results */}
             {activeCalc && (
               <section className="card">
                 <div className="overflow-auto">
@@ -683,7 +647,6 @@ export default function NurseryPlannerPage() {
         )}
       </section>
 
-      {/* Family summary */}
       <section className="card">
         <h2 className="text-lg font-medium mb-3">Family totals</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -699,7 +662,6 @@ export default function NurseryPlannerPage() {
   );
 }
 
-/** ---------------- UI bits ---------------- */
 function NumberField({
   label, value, onChange, step = 0.5, hint,
 }: { label: string; value: number; onChange: (v: number) => void; step?: number; hint?: string; }) {
@@ -724,7 +686,6 @@ function NumberField({
 function TimeField({
   label, value, onChange,
 }: { label: string; value: string; onChange: (v: TimeStr) => void; }) {
-  // Keep time inputs crisp and consistent
   return (
     <div className="flex flex-col gap-1 w-fit">
       <Label className="text-xs sm:text-sm">{label}</Label>

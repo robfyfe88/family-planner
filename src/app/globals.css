@@ -1,20 +1,18 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Tailwind dark mode uses the .dark class */
 @custom-variant dark (&:is(.dark *));
 
-/* ─────────────────── Theme: Light (default) ─────────────────── */
 :root {
-  /* Brand palette (vibrant, not pastel) */
-  --brand:   #3b82f6; /* blue-500 */
-  --brand-2: #8b5cf6; /* violet-500 */
-  --brand-3: #f59e0b; /* amber-500 */
-  --accent-4:#7c3aed; /* violet-600 */
+  --brand:   #3b82f6; 
+  --brand-2: #8b5cf6; 
+  --brand-3: #f59e0b; 
+  --accent-4:#7c3aed; 
+  --accent-5:#c2b025;
 
-  /* Map brand into shadcn tokens */
-  --background: oklch(1 0 0);          /* white */
-  --foreground: oklch(0.20 0 0);       /* near-black for good contrast */
+
+  --background: oklch(1 0 0);          
+  --foreground: oklch(0.20 0 0);       
 
   --card:      oklch(1 0 0);
   --card-foreground: var(--foreground);
@@ -22,35 +20,29 @@
   --popover:   oklch(1 0 0);
   --popover-foreground: var(--foreground);
 
-  /* Primary buttons/links use your brand blue */
   --primary: var(--brand);
-  --primary-foreground: oklch(0.98 0 0); /* white-ish text */
+  --primary-foreground: oklch(0.98 0 0); 
 
-  /* Secondary/Muted surfaces */
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.28 0 0);
 
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.50 0 0);
 
-  /* Accent (used by some badges/underlines) — vivid pink */
-  --accent: #ec4899;                      /* pink-500 */
-  --accent-foreground: oklch(0.98 0 0);   /* white text */
+  --accent: #ec4899;                      
+  --accent-foreground: oklch(0.98 0 0);   
 
-  /* Status / borders / inputs */
-  --destructive: oklch(0.60 0.23 27);   /* strong red */
+  --destructive: oklch(0.60 0.23 27);   
   --border: oklch(0.92 0 0);
   --input:  oklch(0.92 0 0);
   --ring:   oklch(0.70 0 0);
 
-  /* Charts (kept vibrant) */
-  --chart-1: oklch(0.65 0.22 41);   /* orange */
-  --chart-2: oklch(0.60 0.12 185);  /* teal */
-  --chart-3: oklch(0.40 0.07 227);  /* blue */
-  --chart-4: oklch(0.83 0.19 84);   /* green */
-  --chart-5: oklch(0.77 0.19 70);   /* lime */
+  --chart-1: oklch(0.65 0.22 41);  
+  --chart-2: oklch(0.60 0.12 185);  
+  --chart-3: oklch(0.40 0.07 227);  
+  --chart-4: oklch(0.83 0.19 84);   
+  --chart-5: oklch(0.77 0.19 70);   
 
-  /* Sidebar tokens shadcn uses in some kits */
   --sidebar:  oklch(0.99 0 0);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
@@ -60,17 +52,15 @@
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
 
-  /* Legacy app variables (kept for your components) */
-  --card-bg: var(--card);                 /* your .card containers use this */
-  --card-bg2: #ffffff;                    /* removed duplicate, keep white */
+  --card-bg: var(--card);                 
+  --card-bg2: #ffffff;                    
   --border-color: var(--border);
-  --accent-2: var(--primary);             /* old code points here for links/buttons */
-  --accent-3: var(--brand-3);             /* amber accent */
+  --accent-2: var(--primary);        
+  --accent-3: var(--brand-3);      
 
   --radius: 0.625rem;
 }
 
-/* Tailwind “inline theme” mapping for shadcn */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -120,8 +110,6 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* ─────────────────── Theme: Dark (.dark class) ─────────────────── */
-/* Use ONLY the .dark class (remove your old @media dark block). */
 .dark {
   --background: oklch(0.16 0 0);
   --foreground: oklch(0.98 0 0);
@@ -132,7 +120,7 @@
   --popover: oklch(0.20 0 0);
   --popover-foreground: var(--foreground);
 
-  --primary: color-mix(in oklch, var(--brand) 86%, black); /* slightly deeper blue */
+  --primary: color-mix(in oklch, var(--brand) 86%, black); 
   --primary-foreground: oklch(0.98 0 0);
 
   --secondary: oklch(0.28 0 0);
@@ -141,7 +129,7 @@
   --muted: oklch(0.28 0 0);
   --muted-foreground: oklch(0.72 0 0);
 
-  --accent: color-mix(in oklch, #ec4899 85%, black);  /* deeper pink */
+  --accent: color-mix(in oklch, #ec4899 85%, black); 
   --accent-foreground: oklch(0.98 0 0);
 
   --destructive: oklch(0.70 0.19 22);
@@ -164,17 +152,14 @@
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
 
-  /* Legacy tokens in dark */
   --card-bg: var(--card);
   --border-color: var(--border);
   --accent-2: var(--primary);
   --accent-3: var(--brand-3);
 }
 
-/* ─────────────────── Base styles ─────────────────── */
 body { line-height: 1.6; }
 
-/* Links follow primary brand */
 a {
   color: var(--primary);
   text-decoration: none;
@@ -182,11 +167,9 @@ a {
 }
 a:hover { text-decoration: underline; }
 
-/* Buttons micro-interactions */
 button { transition: background-color .2s, transform .1s; }
 button:active { transform: scale(.98); }
 
-/* Cards */
 .lgcard {
   background-color: var(--card-bg);
   padding: .5rem;
@@ -200,7 +183,6 @@ button:active { transform: scale(.98); }
   box-shadow: 0 4px 8px rgba(0,0,0,.03);
 }
 
-/* Headings underline */
 h1, h2, h3 { font-family: var(--font-sans); position: relative; }
 h1::after, h2::after, h3::after {
   content: "";
@@ -210,23 +192,18 @@ h1::after, h2::after, h3::after {
   border-radius: 2px;
 }
 
-/* Tables */
 table { border-collapse: collapse; width: 100%; background: var(--card-bg); border-radius: .75rem; overflow: hidden; }
 th { background-color: var(--accent-3); color: #000; text-align: left; padding: .75rem; }
 td { padding: .75rem; border-top: 1px solid var(--border-color); }
 
-/* Minimal form resets — let shadcn Input/Select style themselves;
-   keep only focus ring consistency across any raw inputs. */
 input:focus, select:focus {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 35%, transparent);
   border-color: var(--primary);
 }
 
-/* Checkbox accent for native inputs (shadcn Checkbox is styled already) */
 input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 
-/* Badges */
 .badge { display: inline-block; padding: .25rem .5rem; border-radius: 9999px; font-size: .75rem; font-weight: 500; }
 .pill  { display: inline-flex; align-items: center; gap: .4rem; padding: .25rem .6rem; border-radius: 999px; font-weight: 600; }
 
@@ -238,18 +215,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .pricing-card .price { font-size: 2rem; line-height: 1.1; font-weight: 700; margin: .25rem 0 .75rem; }
 .pricing-card.featured { background: linear-gradient(180deg, color-mix(in oklch, var(--primary) 10%, transparent), transparent); }
 
-/* Use the right foreground for the badges now that accent is vivid */
 .badge-pink   { background-color: var(--accent); color: var(--accent-foreground); }
 .badge-teal   { background-color: var(--primary); color: var(--primary-foreground); }
 .badge-yellow { background-color: var(--accent-3); color: #000; }
 
-/* Tailwind base layer hook for shadcn */
 @layer base {
   * { @apply border-border outline-ring/50; }
   body { @apply bg-background text-foreground; }
 }
 
-/* Number inputs: hide spinners when using the helper class */
 input[type="number"].no-spinners::-webkit-outer-spin-button,
 input[type="number"].no-spinners::-webkit-inner-spin-button {
   -webkit-appearance: none;

@@ -13,7 +13,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Trash } from "lucide-react";
 
-/** ---------- Types ---------- */
 type Owner = "joint" | "A" | "B";
 type Row = { id: string; label: string; amount: number; owner?: Owner };
 
@@ -37,7 +36,6 @@ type BudgetState = {
 
 const STORE_KEY = "familyBudgetPlanner:v4";
 
-/** ---------- Utils ---------- */
 const uid = () =>
     (typeof crypto !== "undefined" && "randomUUID" in crypto)
         ? crypto.randomUUID()
@@ -168,7 +166,6 @@ function sumByOwner(rows: Row[]) {
     };
 }
 
-/** ---------- Sticky localStorage hook ---------- */
 function useStickyState<T>(key: string, initial: T) {
     const [value, setValue] = React.useState<T>(() => {
         if (typeof window === "undefined") return initial;
@@ -187,7 +184,6 @@ function useStickyState<T>(key: string, initial: T) {
     return [value, setValue] as const;
 }
 
-/** ---------- Defaults ---------- */
 const initialPotId = uid();
 const defaultState: BudgetState = {
     mode: "joint",
@@ -201,7 +197,6 @@ const defaultState: BudgetState = {
     savingsYear: MONTHS.map((m) => ({ month: m, values: { [initialPotId]: 0 } })),
 };
 
-/** ---------- Hooks ---------- */
 function useMedia(query: string, fallback = true) {
     const get = () => (typeof window !== "undefined" ? window.matchMedia(query).matches : fallback);
     const [matches, setMatches] = React.useState(get);
@@ -216,7 +211,6 @@ function useMedia(query: string, fallback = true) {
     return matches;
 }
 
-/** ---------- Donut ---------- */
 function Donut({
     fraction, size = 180, stroke = 14, labelTop, labelBottom,
 }: {
@@ -248,7 +242,6 @@ function Donut({
     );
 }
 
-/** ---------- Main ---------- */
 export default function FamilyBudgetPlanner() {
     const [state, setState] = useLocalStorageState<BudgetState>(
         STORE_KEY,
@@ -256,7 +249,6 @@ export default function FamilyBudgetPlanner() {
         migrateBudgetState
     );
 
-    // 4) (Optional but recommended) keep summary month & editor UI prefs sticky too
     const [summaryMonthIdx, setSummaryMonthIdx] = useLocalStorageState<number>(
         `${STORE_KEY}:summaryMonthIdx`,
         new Date().getMonth()
@@ -265,7 +257,6 @@ export default function FamilyBudgetPlanner() {
 
     const isSmUp = useMedia("(min-width: 640px)", true);
 
-    // restore (with migration guards)
     React.useEffect(() => {
         try {
             const raw = localStorage.getItem(STORE_KEY);
@@ -312,12 +303,10 @@ export default function FamilyBudgetPlanner() {
         } catch { }
     }, []);
 
-    // persist data state
     React.useEffect(() => {
         try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { }
     }, [state]);
 
-    /** Totals */
     const incomeTotals = React.useMemo(() => sumByOwner(state.incomes), [state.incomes]);
     const expenseTotals = React.useMemo(() => sumByOwner(state.expenses), [state.expenses]);
 
@@ -344,7 +333,6 @@ export default function FamilyBudgetPlanner() {
     }, [state.pots, state.savingsYear]);
     const ytdTotal = round2(Object.values(ytdByPot).reduce((s, v) => s + v, 0));
 
-    /** Income/Expense handlers */
     const setIncome = (id: string, patch: Partial<Row>) =>
         setState((st) => ({ ...st, incomes: st.incomes.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
     const addIncome = () => setState((st) => ({ ...st, incomes: [...st.incomes, { id: uid(), label: "", amount: 0, owner: st.mode === "split" ? "A" : "joint" }] }));
@@ -355,7 +343,6 @@ export default function FamilyBudgetPlanner() {
     const addExpense = () => setState((st) => ({ ...st, expenses: [...st.expenses, { id: uid(), label: "", amount: 0, owner: st.mode === "split" ? "A" : "joint" }] }));
     const rmExpense = (id: string) => setState((st) => ({ ...st, expenses: st.expenses.filter((r) => r.id !== id) }));
 
-    /** Pots handlers */
     const addPot = () => {
         const newId = uid();
         const idx = state.pots.length + 1;
@@ -387,7 +374,6 @@ export default function FamilyBudgetPlanner() {
 
     const resetDefaults = () => setState(defaultState);
 
-    /** Export */
     const exportCSV = () => {
         const lines: string[] = [];
         lines.push("Section,Owner,Label,Amount");
@@ -410,7 +396,6 @@ export default function FamilyBudgetPlanner() {
 
     return (
         <div className="space-y-4 sm:space-y-6">
-            {/* Summary */}
             <section className="card">
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6 items-center">
                     <div className="lg:col-span-2">
@@ -436,7 +421,6 @@ export default function FamilyBudgetPlanner() {
                             </div>
                         </div>
 
-                        {/* Mode + names */}
                         <div className="mt-3 flex flex-wrap items-center gap-3">
                             <div className="inline-flex rounded-full border overflow-hidden">
                                 <Button
@@ -527,7 +511,6 @@ export default function FamilyBudgetPlanner() {
                 </div>
             </section>
 
-            {/* Editor (compact) */}
             <section className="card">
                 <BudgetEditorCompact
                     mode={state.mode}
@@ -544,7 +527,6 @@ export default function FamilyBudgetPlanner() {
                 />
             </section>
 
-            {/* Pots tracker */}
             <section className="card">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <h3 className="font-medium">Pots tracker (by month)</h3>
@@ -553,7 +535,6 @@ export default function FamilyBudgetPlanner() {
                     </Button>
                 </div>
 
-                {/* Mobile cards */}
                 <div className="sm:hidden">
                     <PotsCardsMobile
                         months={state.savingsYear}
@@ -566,14 +547,13 @@ export default function FamilyBudgetPlanner() {
                     />
                 </div>
 
-                {/* Desktop table */}
                 <div className="hidden sm:block overflow-auto">
                     <table className="">
                         <thead>
                             <tr>
                                 <th>Month</th>
                                 {state.pots.map((p) => (
-                                    <th key={p.id} className="text-right">
+                                    <th key={p.id} className="text-right w-12">
                                         <div className="flex items-center justify-end gap-2">
                                             <Input
                                                 className="text-right w-40 bg-white"
@@ -597,9 +577,13 @@ export default function FamilyBudgetPlanner() {
                                         <td>{m.month}</td>
                                         {state.pots.map((p) => (
                                             <td key={p.id} className="text-right">
-                                                <NumberCell
+                                                <Input
+                                                    type="number"
+                                                    inputMode="decimal"
+                                                    step={0.01}
+                                                    className="text-right no-spinners"
                                                     value={safe(m.values[p.id])}
-                                                    onChange={(v) => setMonthValue(rowIdx, p.id, v)}
+                                                    onChange={(e) => setMonthValue(rowIdx, p.id, parseFloat(e.target.value || "0"))}
                                                 />
                                             </td>
                                         ))}
@@ -631,7 +615,6 @@ export default function FamilyBudgetPlanner() {
     );
 }
 
-/** ---------- Mobile Pots Cards ---------- */
 function PotsCardsMobile({
     months,
     pots,
@@ -653,7 +636,6 @@ function PotsCardsMobile({
 
     return (
         <div className="space-y-3">
-            {/* Pot headers inline editor */}
             <div className="p-3 border rounded-xl">
                 <div className="text-sm font-medium mb-2">Pot names</div>
                 <div className="grid grid-cols-1 gap-2">
@@ -721,7 +703,6 @@ function PotsCardsMobile({
     );
 }
 
-/** ---------- Editor (table + mobile list) ---------- */
 function BudgetEditorCompact({
     mode,
     parentAName,
@@ -749,7 +730,6 @@ function BudgetEditorCompact({
     onRemoveIncome: (id: string) => void;
     onRemoveExpense: (id: string) => void;
 }) {
-    // persist all editor UI controls to localStorage
     const [tab, setTab] = useStickyState<"income" | "expense">(`${STORE_KEY}:editor:tab`, "income");
     const [q, setQ] = useStickyState<string>(`${STORE_KEY}:editor:q`, "");
     const [hideZero, setHideZero] = useStickyState<boolean>(`${STORE_KEY}:editor:hideZero`, false);
@@ -789,7 +769,6 @@ function BudgetEditorCompact({
 
     return (
         <div className="space-y-4">
-            {/* Controls */}
             <div className="flex flex-wrap items-center gap-3">
                 <div className="inline-flex rounded-full border overflow-hidden" role="tablist" aria-label="Budget editor tabs">
                     <Button
@@ -830,7 +809,6 @@ function BudgetEditorCompact({
                 </div>
             </div>
 
-            {/* Owner filter (split mode only) */}
             {mode === "split" && (
                 <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm opacity-70">Filter:</span>
@@ -849,7 +827,6 @@ function BudgetEditorCompact({
                 </div>
             )}
 
-            {/* Mobile card list */}
             <div className="sm:hidden space-y-2">
                 {filtered.map((r, idx) => (
                     <div key={r.id} className="border rounded-xl p-3">
@@ -914,7 +891,6 @@ function BudgetEditorCompact({
                 </div>
             </div>
 
-            {/* Desktop table */}
             <div className="hidden sm:block rounded-xl border overflow-hidden">
                 <div className="max-h-80 overflow-auto">
                     <table className="w-full text-sm">
@@ -991,7 +967,6 @@ function BudgetEditorCompact({
                     </table>
                 </div>
 
-                {/* Footer */}
                 <div className="flex items-center justify-between gap-3 px-3 py-2 border-t bg-[var(--card-bg)]">
                     <Button variant="outline" onClick={onAdd}>
                         ➕ Add {tab === "income" ? "income" : "expense"}
