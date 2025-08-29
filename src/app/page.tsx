@@ -126,9 +126,8 @@ export default function LandingPage() {
       </section>
 
       {/* Pricing (member-based) */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+      {/* <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <div className="grid md:grid-cols-3 gap-6">
-          {/* Free */}
           <div className="pricing-card p-4">
             <div className="pricing-head">
               <span className="pill pill-slate">Free</span>
@@ -141,8 +140,6 @@ export default function LandingPage() {
               <Check text="Local exports" />
             </ul>
           </div>
-
-          {/* Plus */}
           <div className="pricing-card featured border-[2px] border-[var(--accent-2)] p-4 shadow-md">
             <div className="pricing-head">
               <span className="pill pill-blue">Plus</span>
@@ -155,8 +152,6 @@ export default function LandingPage() {
               <Check text="Priority updates & exports" />
             </ul>
           </div>
-
-          {/* Family */}
           <div className="pricing-card p-4">
             <div className="pricing-head">
               <span className="pill pill-green">Family</span>
@@ -170,17 +165,17 @@ export default function LandingPage() {
             </ul>
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Footer */}
       <footer className="max-w-6xl mx-auto px-4 sm:px-6 py-10 text-sm opacity-70">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* <div className="flex flex-wrap items-center justify-between gap-3">
           <div>© {new Date().getFullYear()} hearthPlan</div>
           <div className="flex items-center gap-3">
             <Link href="/app" className="hover:underline">Open app</Link>
             <a className="hover:underline" href="mailto:hello@example.com">Contact</a>
           </div>
-        </div>
+        </div> */}
       </footer>
     </main>
   );

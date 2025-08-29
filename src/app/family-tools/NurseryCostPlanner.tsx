@@ -299,7 +299,7 @@ export default function NurseryPlannerPage() {
     setChildren(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
 
   const factors = useMemo(() => {
-    const weeksPerYear = yearMode === "FULL_YEAR" ? 50 : termWeeks;
+    const weeksPerYear = yearMode === "FULL_YEAR" ? 51 : termWeeks;
     const monthlyDivisor = yearMode === "TERM_TIME" ? 11 : 12;
     const monthlyFactor = weeksPerYear / monthlyDivisor;
     return { weeksPerYear, monthlyDivisor, monthlyFactor };
@@ -628,7 +628,7 @@ export default function NurseryPlannerPage() {
                   <Stat label="Funded hours (weekly)" value={`${activeCalc.fundedHoursPerWeek} h`} />
                   <Stat label="Funding credit (weekly)" value={`- ${gbp(activeCalc.weeklyFundingCredit)}`} />
                   <Stat
-                    label={`Estimated monthly (${yearMode === "FULL_YEAR" ? "50 w/yr ÷ 12" : `${termWeeks} w/yr ÷ 11`})`}
+                    label={`Estimated monthly (${yearMode === "FULL_YEAR" ? "51 w/yr ÷ 12" : `${termWeeks} w/yr ÷ 11`})`}
                     value={gbp(activeCalc.monthlyInvoice)}
                   />
                 </div>
