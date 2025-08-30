@@ -1,20 +1,10 @@
-import Link from "next/link";
 import SignInButton from "@/components/SignInButton";
 import HearthPlanLogo from "@/components/HearthPlanLogo";
 
-function Check({ text }: { text: string }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span aria-hidden>✅</span>
-      <span>{text}</span>
-    </li>
-  );
-}
 
 export default function LandingPage() {
   return (
     <main className="min-h-dvh">
-      {/* Header */}
       <header className="max-w-6xl mx-auto px-4 sm:px-2 py-4 flex items-center justify-between">
         <div className="inline-flex items-center gap-2 font-semibold">
           <HearthPlanLogo size={50} variant="app" />
@@ -25,11 +15,9 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="overflow-hidden">
         <div
           className="hero-vibrant"
-          // graceful fallback for older browsers
           style={{
             background:
               "radial-gradient(900px 480px at 10% -10%, rgba(99,102,241,.35) 0%, rgba(99,102,241,0) 60%), radial-gradient(700px 480px at 90% -10%, rgba(16,185,129,.35) 0%, rgba(16,185,129,0) 60%), linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,1) 55%)",

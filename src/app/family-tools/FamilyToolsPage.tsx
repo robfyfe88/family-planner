@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React from "react";
 import AnnualLeavePlanner from "./AnnualLeavePlanner";
 import NurseryPlannerPage from "./NurseryCostPlanner";
 import FamilyBudgetPlanner from "./FamilyBudgetPlanner";
@@ -8,8 +8,49 @@ import ActivitiesPlanner from "./ActivitiesPlannner";
 
 type TabKey = "nursery" | "leave" | "budget" | "activities";
 
+const isTab = (v: string): v is TabKey =>
+  v === "nursery" || v === "leave" || v === "budget" || v === "activities";
+
+const readTabFromURLorLS = (): TabKey => {
+  if (typeof window === "undefined") return "budget";
+  const h = window.location.hash?.slice(1);
+  if (h && isTab(h)) return h;
+  const ls = localStorage.getItem("hearthplan:tab");
+  if (ls && isTab(ls)) return ls;
+  return "budget";
+};
+
 export default function FamilyToolsPage() {
-  const [tab, setTab] = useState<TabKey>("budget");
+  const [tab, setTab] = React.useState<TabKey>("budget");
+  const [mounted, setMounted] = React.useState(false);
+  const hasSyncedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    setTab(readTabFromURLorLS());
+    setMounted(true);
+    hasSyncedRef.current = true;
+  }, []);
+
+  React.useEffect(() => {
+    if (!mounted || !hasSyncedRef.current) return;
+    if (typeof window === "undefined") return;
+
+    const wanted = `#${tab}`;
+    if (window.location.hash !== wanted) {
+      window.history.replaceState(null, "", wanted);
+    }
+    localStorage.setItem("hearthplan:tab", tab);
+  }, [tab, mounted]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onHash = () => {
+      const h = window.location.hash?.slice(1) || "";
+      if (isTab(h)) setTab(h);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const ids = {
     nurseryBtn: "tab-nursery",
@@ -22,27 +63,14 @@ export default function FamilyToolsPage() {
     budgetPanel: "panel-budget",
   };
 
-  useEffect(() => {
-    const fromHash = (typeof window !== "undefined" && window.location.hash?.slice(1)) as TabKey | "";
-    const fromLS = (typeof window !== "undefined" && localStorage.getItem("hearthplan:tab")) as TabKey | null;
-    if (fromHash && isTab(fromHash)) setTab(fromHash);
-    else if (fromLS && isTab(fromLS)) setTab(fromLS);
-  }, []);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#${tab}`);
-      localStorage.setItem("hearthplan:tab", tab);
-    }
-  }, [tab]);
-
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
   useSwipe(panelRef, {
     onSwipeLeft: () => setTab(nextTab(tab)),
     onSwipeRight: () => setTab(prevTab(tab)),
   });
 
-  const tabListRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
+  const tabListRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
     const el = tabListRef.current;
     if (!el) return;
     const onKey = (e: KeyboardEvent) => {
@@ -56,45 +84,20 @@ export default function FamilyToolsPage() {
     return () => el.removeEventListener("keydown", onKey);
   }, [tab]);
 
+  if (!mounted) {
+    return <div className="max-w-6xl mx-auto px-2 sm:px-6 py-6" />;
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-
       <header className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
         <div className="block sm:hidden sticky top-0 z-30 -mx-4 px-4 py-2 bg-[var(--background)]/80 backdrop-blur">
           <nav aria-label="Planner tabs (mobile)">
             <div className="grid grid-cols-2 gap-2">
-              <GridTab
-                id={ids.budgetBtn}
-                active={tab === "budget"}
-                onClick={() => setTab("budget")}
-                ariaControls={ids.budgetPanel}
-                label="Family Budget"
-                accent="var(--accent-4)"
-              />
-              <GridTab
-                id={ids.nurseryBtn}
-                active={tab === "nursery"}
-                onClick={() => setTab("nursery")}
-                ariaControls={ids.nurseryPanel}
-                label="Childcare Costs"
-                accent="var(--accent-2)"
-              />
-              <GridTab
-                id={ids.leaveBtn}
-                active={tab === "leave"}
-                onClick={() => setTab("leave")}
-                ariaControls={ids.leavePanel}
-                label="Annual Leave"
-                accent="var(--accent)"
-              />
-              <GridTab
-                id={ids.activitiesBtn}
-                active={tab === "activities"}
-                onClick={() => setTab("activities")}
-                ariaControls={ids.activitiesPanel}
-                label="Activities"
-                accent="var(--accent-5)"
-              />
+              <GridTab id={ids.budgetBtn} active={tab === "budget"} onClick={() => setTab("budget")} ariaControls={ids.budgetPanel} label="Family Budget" accent="var(--accent-4)" />
+              <GridTab id={ids.nurseryBtn} active={tab === "nursery"} onClick={() => setTab("nursery")} ariaControls={ids.nurseryPanel} label="Childcare Costs" accent="var(--accent-2)" />
+              <GridTab id={ids.leaveBtn} active={tab === "leave"} onClick={() => setTab("leave")} ariaControls={ids.leavePanel} label="Annual Leave" accent="var(--accent)" />
+              <GridTab id={ids.activitiesBtn} active={tab === "activities"} onClick={() => setTab("activities")} ariaControls={ids.activitiesPanel} label="Activities" accent="var(--accent-5)" />
             </div>
           </nav>
         </div>
@@ -103,76 +106,27 @@ export default function FamilyToolsPage() {
           role="tablist"
           aria-label="Planner tabs"
           ref={tabListRef}
-          className="
-            hidden sm:block
-            sm:static sticky top-0 z-30
-            -mx-4 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0
-            bg-[var(--background)]/80 backdrop-blur
-          "
+          className="hidden sm:block sm:static sticky top-0 z-30 -mx-4 sm:mx-0 px-4 sm:px-0 py-2 sm:py-0 bg-[var(--background)]/80 backdrop-blur"
         >
-          <div
-            className="
-              relative w-full sm:w-auto
-              inline-flex gap-1 sm:gap-0
-              rounded-full border
-              p-1
-            "
-          >
-            <PillTab
-              id={ids.budgetBtn}
-              active={tab === "budget"}
-              onClick={() => setTab("budget")}
-              ariaControls={ids.budgetPanel}
-              accent="var(--accent-4)"
-            >
-              Family Budget
-            </PillTab>
-            <PillTab
-              id={ids.nurseryBtn}
-              active={tab === "nursery"}
-              onClick={() => setTab("nursery")}
-              ariaControls={ids.nurseryPanel}
-              accent="var(--accent-2)"
-            >
-              Childcare Costs
-            </PillTab>
-            <PillTab
-              id={ids.leaveBtn}
-              active={tab === "leave"}
-              onClick={() => setTab("leave")}
-              ariaControls={ids.leavePanel}
-              accent="var(--accent)"
-            >
-              Annual Leave
-            </PillTab>
-            <PillTab
-              id={ids.activitiesBtn}
-              active={tab === "activities"}
-              onClick={() => setTab("activities")}
-              ariaControls={ids.activitiesPanel}
-              accent="var(--accent-5)"
-            >
-              Activities Planner
-            </PillTab>
+          <div className="relative w-full sm:w-auto inline-flex gap-1 sm:gap-0 rounded-full border p-1">
+            <PillTab id={ids.budgetBtn} active={tab === "budget"} onClick={() => setTab("budget")} ariaControls={ids.budgetPanel} accent="var(--accent-4)">Family Budget</PillTab>
+            <PillTab id={ids.nurseryBtn} active={tab === "nursery"} onClick={() => setTab("nursery")} ariaControls={ids.nurseryPanel} accent="var(--accent-2)">Childcare Costs</PillTab>
+            <PillTab id={ids.leaveBtn} active={tab === "leave"} onClick={() => setTab("leave")} ariaControls={ids.leavePanel} accent="var(--accent)">Annual Leave</PillTab>
+            <PillTab id={ids.activitiesBtn} active={tab === "activities"} onClick={() => setTab("activities")} ariaControls={ids.activitiesPanel} accent="var(--accent-5)">Activities Planner</PillTab>
           </div>
         </nav>
       </header>
 
       <div ref={panelRef} className="space-y-4 sm:space-y-6">
         <Panel id={ids.nurseryPanel} labelledBy={ids.nurseryBtn} hidden={tab !== "nursery"}>
-          <section className="card">
-            <NurseryPlannerPage />
-          </section>
+          <section className="card"><NurseryPlannerPage /></section>
         </Panel>
-
         <Panel id={ids.leavePanel} labelledBy={ids.leaveBtn} hidden={tab !== "leave"}>
           <AnnualLeavePlanner />
         </Panel>
-
         <Panel id={ids.budgetPanel} labelledBy={ids.budgetBtn} hidden={tab !== "budget"}>
           <FamilyBudgetPlanner />
         </Panel>
-
         <Panel id={ids.activitiesPanel} labelledBy={ids.activitiesBtn} hidden={tab !== "activities"}>
           <ActivitiesPlanner />
         </Panel>
@@ -183,14 +137,7 @@ export default function FamilyToolsPage() {
 
 function GridTab({
   id, active, onClick, ariaControls, label, accent,
-}: {
-  id: string;
-  active: boolean;
-  onClick: () => void;
-  ariaControls: string;
-  label: string;
-  accent: string; 
-}) {
+}: { id: string; active: boolean; onClick: () => void; ariaControls: string; label: string; accent: string; }) {
   return (
     <button
       id={id}
@@ -198,12 +145,7 @@ function GridTab({
       aria-controls={ariaControls}
       aria-selected={active}
       onClick={onClick}
-      className={`
-        w-full h-12 rounded-xl text-sm font-medium
-        transition shadow-sm
-        focus-visible:outline-none focus-visible:ring-2
-        ${active ? "text-white" : "bg-[var(--card-bg)] hover:bg-[var(--card-bg)]/80"}
-      `}
+      className={`w-full h-12 rounded-xl text-sm font-medium transition shadow-sm focus-visible:outline-none focus-visible:ring-2 ${active ? "text-white" : "bg-[var(--card-bg)] hover:bg-[var(--card-bg)]/80"}`}
       style={{ background: active ? accent : undefined }}
     >
       {label}
@@ -213,14 +155,7 @@ function GridTab({
 
 function PillTab({
   id, active, onClick, ariaControls, children, accent,
-}: {
-  id: string;
-  active: boolean;
-  onClick: () => void;
-  ariaControls: string;
-  children: React.ReactNode;
-  accent: string;
-}) {
+}: { id: string; active: boolean; onClick: () => void; ariaControls: string; children: React.ReactNode; accent: string; }) {
   return (
     <button
       id={id}
@@ -228,12 +163,7 @@ function PillTab({
       aria-controls={ariaControls}
       aria-selected={active}
       onClick={onClick}
-      className={`
-        shrink-0 inline-flex items-center justify-center
-        px-3 sm:px-4 py-2 rounded-full text-sm transition
-        focus-visible:outline-none focus-visible:ring-2
-        ${active ? "text-white" : "hover:bg-[var(--card-bg)]"}
-      `}
+      className={`shrink-0 inline-flex items-center justify-center px-3 sm:px-4 py-2 rounded-full text-sm transition focus-visible:outline-none focus-visible:ring-2 ${active ? "text-white" : "hover:bg-[var(--card-bg)]"}`}
       style={{ background: active ? accent : undefined }}
     >
       {children}
@@ -241,25 +171,16 @@ function PillTab({
   );
 }
 
-function Panel({
-  id, labelledBy, hidden, children,
-}: { id: string; labelledBy: string; hidden: boolean; children: React.ReactNode }) {
+function Panel({ id, labelledBy, hidden, children }:{
+  id: string; labelledBy: string; hidden: boolean; children: React.ReactNode;
+}) {
   return (
-    <div
-      id={id}
-      role="tabpanel"
-      aria-labelledby={labelledBy}
-      aria-hidden={hidden}
-      className={hidden ? "hidden" : "block"}
-    >
+    <div id={id} role="tabpanel" aria-labelledby={labelledBy} aria-hidden={hidden} className={hidden ? "hidden" : "block"}>
       {children}
     </div>
   );
 }
 
-function isTab(v: string): v is TabKey {
-  return v === "nursery" || v === "leave" || v === "budget" || v === "activities";
-}
 function nextTab(t: TabKey): TabKey {
   const order: TabKey[] = ["budget", "nursery", "leave", "activities"];
   const i = order.indexOf(t);
@@ -276,7 +197,7 @@ function useSwipe(
   opts: { onSwipeLeft?: () => void; onSwipeRight?: () => void; thresholdPx?: number } = {}
 ) {
   const { onSwipeLeft, onSwipeRight, thresholdPx = 60 } = opts;
-  useEffect(() => {
+  React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
     let startX = 0, startY = 0, active = false;

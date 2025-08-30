@@ -6,7 +6,7 @@ import { FcGoogle } from "react-icons/fc";
 export default function SignInButton() {
   return (
     <Button
-      onClick={() => signIn("google", { callbackUrl: "/app" })}
+      onClick={() => signIn("google", { callbackUrl: "/app/dashboard" })}
       className="gap-2"
       size="lg"
     >

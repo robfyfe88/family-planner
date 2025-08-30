@@ -522,7 +522,7 @@ export default function AnnualLeavePlanner() {
           <div className="flex flex-col gap-1">
             <Label className="text-sm">Joint days (both off together)</Label>
             <Input
-              type="number" inputMode="numeric" className="no-spinners"
+              type="text" inputMode="numeric" className="no-spinners"
               value={jointDays} min={0}
               onChange={(e) => setJointDays(parseInt(e.target.value || "0", 10))}
               disabled={!hasSecondParent}
@@ -743,7 +743,7 @@ function ParentCard({
           <div className="flex flex-col gap-1">
             <Label className="text-sm whitespace-nowrap">Annual leave (days)</Label>
             <Input
-              type="number" inputMode="numeric" className="no-spinners" min={0}
+              type="text" inputMode="numeric" className="no-spinners" min={0}
               value={cfg.allowance}
               onChange={(e) => onChange({ ...cfg, allowance: parseInt(e.target.value || "0", 10) })}
               onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()}
@@ -794,7 +794,7 @@ function MonthPicker({ anchor, onChange }: { anchor: Date; onChange: (d: Date) =
         </SelectContent>
       </Select>
       <Input
-        className="w-24" type="number" inputMode="numeric" value={y}
+        className="w-24" type="text" inputMode="numeric" value={y}
         onChange={(e) => { const v = parseInt(e.target.value, 10); if (!Number.isNaN(v)) setY(v); }}
         onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()}
       />

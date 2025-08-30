@@ -1,0 +1,306 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model Household {
+  id                String              @id @default(cuid())
+  name              String
+  members           Member[]
+  activities        Activity[]
+  schedules         Schedule[]
+  overrides         Override[]
+  schoolDays        SchoolDay[]
+  leaves            Leave[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  BudgetCategory    BudgetCategory[]
+  BudgetMonthly     BudgetMonthly[]
+  Account           Account[]
+  SavingsPot        SavingsPot[]
+  PotTransfer       PotTransfer[]
+  Transaction       Transaction[]
+  RecurringTemplate RecurringTemplate[]
+  PotMonthly        PotMonthly[]
+}
+
+model Member {
+  id          String     @id @default(cuid())
+  householdId String
+  name        String
+  role        MemberRole
+  shortLabel  String?
+  color       String?
+  slot        String?
+  household   Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+}
+
+enum MemberRole {
+  parent
+  child
+}
+
+model Activity {
+  id          String     @id @default(cuid())
+  householdId String
+  name        String
+  category    String?
+  location    String?
+  household   Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  schedules   Schedule[]
+
+  @@index([householdId])
+}
+
+model Schedule {
+  id          String    @id @default(cuid())
+  householdId String
+  activityId  String
+  weekday     Int? // 0..6
+  startTime   String?
+  endTime     String?
+  rrule       String?
+  startDate   DateTime?
+  endDate     DateTime?
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  activity    Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+  @@index([activityId])
+}
+
+model Override {
+  id           String         @id @default(cuid())
+  householdId  String
+  date         DateTime
+  memberId     String?
+  activityId   String?
+  status       OverrideStatus
+  newStartTime String?
+  newEndTime   String?
+  notes        String?
+  household    Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+  @@index([memberId])
+  @@index([activityId])
+}
+
+enum OverrideStatus {
+  added
+  skipped
+  moved
+}
+
+model SchoolDay {
+  id           String    @id @default(cuid())
+  householdId  String
+  date         DateTime
+  isSchoolOpen Boolean   @default(true)
+  label        String?
+  household    Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, date])
+  @@index([householdId])
+}
+
+model Leave {
+  id          String    @id @default(cuid())
+  householdId String
+  memberId    String?
+  startDate   DateTime
+  endDate     DateTime
+  type        String?
+  notes       String?
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+  @@index([memberId])
+}
+
+// --- Budget core ---
+
+enum MoneyFlow {
+  income
+  expense
+  transfer
+}
+
+// transaction direction
+
+enum Recurrence {
+  none
+  monthly
+  weekly
+  yearly
+  custom
+}
+
+model BudgetCategory {
+  id          String    @id @default(cuid())
+  householdId String
+  name        String
+  // Optional grouping (e.g., "Housing", "Transport")
+  group       String?
+  // Whether this category counts toward spend summaries (some income/transfer cats may not)
+  isSpending  Boolean   @default(true)
+  // "income" categories should have isSpending=false typically
+  flow        MoneyFlow @default(expense)
+
+  household         Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  budgets           BudgetMonthly[]
+  transactions      Transaction[]
+  PotAllocation     PotAllocation[]
+  RecurringTemplate RecurringTemplate[]
+
+  @@unique([householdId, name]) // prevent duplicates per household
+  @@index([householdId])
+}
+
+model BudgetMonthly {
+  id           String @id @default(cuid())
+  householdId  String
+  categoryId   String
+  month        Int // 1..12
+  year         Int
+  plannedPence Int // planned amount for this category in pence
+
+  household Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category  BudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, categoryId, month, year])
+  @@index([householdId, year, month])
+}
+
+// prisma/schema.prisma  (add this model)
+
+model PotMonthly {
+  id          String @id @default(cuid())
+  householdId String
+  potId       String
+  month       Int // 1..12
+  year        Int
+  amountPence Int    @default(0)
+
+  household Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  pot       SavingsPot @relation(fields: [potId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, potId, month, year])
+  @@index([householdId, year, month])
+}
+
+model Account {
+  id          String  @id @default(cuid())
+  householdId String
+  name        String
+  type        String? // "bank", "card", "wallet" etc
+  isPrimary   Boolean @default(false)
+
+  household         Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+  potTransfers      PotTransfer[]
+  RecurringTemplate RecurringTemplate[]
+
+  @@unique([householdId, name])
+  @@index([householdId])
+}
+
+model SavingsPot {
+  id           String @id @default(cuid())
+  householdId  String
+  name         String
+  targetPence  Int? // optional goal
+  balancePence Int    @default(0) // derived if you prefer; stored for speed
+
+  household         Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  allocations       PotAllocation[]
+  transfers         PotTransfer[]
+  Transaction       Transaction[]
+  RecurringTemplate RecurringTemplate[]
+  monthlyPlans      PotMonthly[]
+
+  @@unique([householdId, name])
+  @@index([householdId])
+}
+
+model PotAllocation {
+  id                 String @id @default(cuid())
+  potId              String
+  categoryId         String
+  // % of category spend/income that should auto-move to the pot (0..10000 = 0..100.00%)
+  percentBasisPoints Int    @default(0)
+
+  pot      SavingsPot     @relation(fields: [potId], references: [id], onDelete: Cascade)
+  category BudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([potId, categoryId])
+}
+
+model PotTransfer {
+  id          String   @id @default(cuid())
+  householdId String
+  potId       String
+  accountId   String?
+  date        DateTime @default(now())
+  // positive = into pot; negative = out of pot
+  amountPence Int
+  memo        String?
+
+  household Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  pot       SavingsPot @relation(fields: [potId], references: [id], onDelete: Cascade)
+  account   Account?   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, date])
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  householdId String
+  accountId   String?
+  categoryId  String?
+  date        DateTime
+  amountPence Int // income > 0; expense < 0 (by convention) OR use flow
+  flow        MoneyFlow
+  description String?
+  potId       String? // optional: direct to pot
+
+  household Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  account   Account?        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category  BudgetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  pot       SavingsPot?     @relation(fields: [potId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, date])
+  @@index([householdId, categoryId])
+  @@index([householdId, accountId])
+}
+
+model RecurringTemplate {
+  id                String     @id @default(cuid())
+  householdId       String
+  name              String
+  flow              MoneyFlow  @default(expense)
+  defaultCategoryId String?
+  defaultAccountId  String?
+  defaultPotId      String?
+  recurrence        Recurrence @default(monthly)
+  // "RRULE" style optional field if you want richer rules later
+  rrule             String?
+  // next time you should instantiate a Transaction from this
+  nextRunDate       DateTime
+  amountPence       Int
+  description       String?
+
+  household       Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  defaultCategory BudgetCategory? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  defaultAccount  Account?        @relation(fields: [defaultAccountId], references: [id], onDelete: SetNull)
+  defaultPot      SavingsPot?     @relation(fields: [defaultPotId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, nextRunDate])
+}

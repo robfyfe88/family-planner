@@ -12,4 +12,3 @@ export const { handlers, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET,
 });
 
-// (No `auth` export from this file – keep providers away from middleware)

@@ -621,7 +621,7 @@ export default function ActivitiesPlanner() {
                                 <div className="flex flex-col gap-1">
                                     <Label className="text-sm">Interval (weeks)</Label>
                                     <Input
-                                        type="number" min={1} value={form.intervalWeeks}
+                                        type="text" min={1} value={form.intervalWeeks}
                                         onChange={(e) => setForm(f => ({ ...f, intervalWeeks: e.target.value }))}
                                     />
                                 </div>
@@ -684,7 +684,7 @@ export default function ActivitiesPlanner() {
                             <div className="flex flex-col gap-1">
                                 <Label className="text-sm">Cost per session (£)</Label>
                                 <Input
-                                    type="number" inputMode="decimal"
+                                    type="text" inputMode="text"
                                     value={form.costPerSession}
                                     onChange={(e) => setForm(f => ({ ...f, costPerSession: e.target.value }))}
                                     placeholder="0.00"
@@ -815,7 +815,7 @@ function MonthPicker({ anchor, onChange }: { anchor: Date; onChange: (d: Date) =
                 </SelectContent>
             </Select>
             <Input
-                className="w-24" type="number" inputMode="numeric" value={y}
+                className="w-24" type="text" inputMode="numeric" value={y}
                 onChange={(e) => { const v = parseInt(e.target.value, 10); if (!Number.isNaN(v)) setY(v); }}
                 onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()}
             />

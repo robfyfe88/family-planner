@@ -670,8 +670,8 @@ function NumberField({
     <div className="flex flex-col gap-1 w-full">
       <Label className="text-xs sm:text-sm">{label}</Label>
       <Input
-        type="number"
-        inputMode="decimal"
+        type="text"
+        inputMode="text"
         step={step}
         value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(parseFloat(e.target.value || "0"))}

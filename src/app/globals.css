@@ -224,12 +224,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
   body { @apply bg-background text-foreground; }
 }
 
-input[type="number"].no-spinners::-webkit-outer-spin-button,
-input[type="number"].no-spinners::-webkit-inner-spin-button {
+input[type="text"].no-spinners::-webkit-outer-spin-button,
+input[type="text"].no-spinners::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
-input[type="number"].no-spinners {
+input[type="text"].no-spinners {
   -moz-appearance: textfield;
   appearance: textfield;
 }
