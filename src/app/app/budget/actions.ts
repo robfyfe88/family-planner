@@ -77,8 +77,8 @@ export async function fetchBudgetRowsForMonth(
   });
 
   return {
-    incomes: lines.filter((l: { flow: string; }) => l.flow === "income").map(toRow),
-    expenses: lines.filter((l: { flow: string; }) => l.flow === "expense").map(toRow),
+    incomes: lines.filter((l : any) => l.flow === "income").map(toRow),
+    expenses: lines.filter((l : any) => l.flow === "expense").map(toRow),
   };
 }
 
@@ -103,16 +103,7 @@ export async function upsertBudgetRowScoped(
   const defaultAmountPence = toPence(payload.amount);
   const effFrom = monthStart(payload.year, payload.month1to12);
 
-  return prisma.$transaction(async (tx: {
-      budgetLine: {
-        findFirst: (arg0: { where: { id: string; householdId: any; } | { householdId: any; label: string; flow: Kind; owner: Owner; effectiveFrom: { lte: Date; }; OR: ({ effectiveTo: null; } | { effectiveTo: { gte: Date; }; })[]; }; orderBy?: { effectiveFrom: string; }[]; }) => any; create: (arg0: {
-          data: {
-            householdId: any; label: string; flow: Kind; owner: Owner; recurrence: string; // default behaviour
-            effectiveFrom: Date; effectiveTo: null; defaultAmountPence: number;
-          };
-        }) => any; update: (arg0: { where: { id: any; } | { id: any; } | { id: any; }; data: { label: string; flow: Kind; owner: Owner; } | { defaultAmountPence: number; } | { defaultAmountPence: number; }; }) => any; findUnique: (arg0: { where: { id: any; }; select: { defaultAmountPence: boolean; }; }) => any;
-      }; budgetLineOverride: { upsert: (arg0: { where: { lineId_year_month: { lineId: any; year: number; month: number; }; }; update: { amountPence: number; }; create: { householdId: any; lineId: any; year: number; month: number; amountPence: number; }; }) => any; deleteMany: (arg0: { where: { lineId: any; OR: ({ year: { gt: number; }; } | { year: number; month: { gte: number; }; })[]; } | { lineId: any; }; }) => any; findUnique: (arg0: { where: { lineId_year_month: { lineId: any; year: number; month: number; }; }; select: { amountPence: boolean; }; }) => any; };
-    }) => {
+  return prisma.$transaction(async (tx : any) => {
     // 1) Find or create a BudgetLine
     let line = payload.id
       ? await tx.budgetLine.findFirst({
