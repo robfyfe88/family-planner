@@ -10,7 +10,8 @@
     "prisma:studio": "prisma studio",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+ "backfill:planner": "node src/scripts/backfillBudgetLines.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

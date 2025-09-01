@@ -27,6 +27,10 @@ model Household {
   Transaction       Transaction[]
   RecurringTemplate RecurringTemplate[]
   PotMonthly        PotMonthly[]
+
+  // NEW back-relations for planner
+  budgetLines         BudgetLine[]         @relation("HouseholdBudgetLines")
+  budgetLineOverrides BudgetLineOverride[] @relation("HouseholdBudgetLineOverrides")
 }
 
 model Member {
@@ -160,6 +164,9 @@ model BudgetCategory {
   PotAllocation     PotAllocation[]
   RecurringTemplate RecurringTemplate[]
 
+  // NEW back-relation for planner
+  budgetLines BudgetLine[] @relation("CategoryBudgetLines")
+
   @@unique([householdId, name]) // prevent duplicates per household
   @@index([householdId])
 }
@@ -178,8 +185,6 @@ model BudgetMonthly {
   @@unique([householdId, categoryId, month, year])
   @@index([householdId, year, month])
 }
-
-// prisma/schema.prisma  (add this model)
 
 model PotMonthly {
   id          String @id @default(cuid())
@@ -303,4 +308,50 @@ model RecurringTemplate {
   defaultPot      SavingsPot?     @relation(fields: [defaultPotId], references: [id], onDelete: SetNull)
 
   @@index([householdId, nextRunDate])
+}
+
+// --- NEW planner enums/models ---
+
+enum BudgetOwner {
+  joint
+  A
+  B
+}
+
+model BudgetLine {
+  id                 String      @id @default(cuid())
+  householdId        String
+  label              String
+  flow               MoneyFlow   @default(expense) // income | expense | transfer
+  owner              BudgetOwner @default(joint)
+  categoryId         String?
+  recurrence         Recurrence  @default(monthly) // none | monthly | weekly | yearly | custom
+  effectiveFrom      DateTime    @default(now())
+  effectiveTo        DateTime?
+  defaultAmountPence Int         @default(0)
+
+  // named relations to satisfy back-relations
+  household Household            @relation("HouseholdBudgetLines", fields: [householdId], references: [id], onDelete: Cascade)
+  category  BudgetCategory?      @relation("CategoryBudgetLines", fields: [categoryId], references: [id], onDelete: SetNull)
+  overrides BudgetLineOverride[]
+
+  @@index([householdId, effectiveFrom, effectiveTo])
+  @@index([householdId, flow])
+  @@index([householdId, categoryId])
+}
+
+model BudgetLineOverride {
+  id          String @id @default(cuid())
+  householdId String
+  lineId      String
+  year        Int // 4-digit
+  month       Int // 1..12
+  amountPence Int    @default(0)
+
+  // named household relation; line<->overrides relation inferred via fields/ref
+  household Household  @relation("HouseholdBudgetLineOverrides", fields: [householdId], references: [id], onDelete: Cascade)
+  line      BudgetLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([lineId, year, month])
+  @@index([householdId, year, month])
 }

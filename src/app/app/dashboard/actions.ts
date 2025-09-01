@@ -23,7 +23,7 @@ export type DashboardData = {
   upcomingLeave: Array<{ id: string; member?: string | null; dateISO: string; label: string }>;
 };
 
-const toISODate = (d: Date) => d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+const toISODate = (d: Date) => d.toISOString().slice(0, 10); 
 
 export async function getDashboardData(): Promise<DashboardData> {
   const hh = await prisma.household.findFirst();
@@ -74,7 +74,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     }
   }
 
-  // Closures in current month
   const closures = await prisma.schoolDay.findMany({
     where: { householdId: hh.id, date: { gte: monthStart, lte: monthEnd }, isSchoolOpen: false },
     orderBy: { date: "asc" },
@@ -85,7 +84,6 @@ export async function getDashboardData(): Promise<DashboardData> {
       ? toISODate(closures.find((c: { date: { getTime: () => number; }; }) => c.date.getTime() >= now.getTime())!.date)
       : null;
 
-  // Upcoming closures (next 5 from today)
   const closuresUpcomingRaw = await prisma.schoolDay.findMany({
     where: { householdId: hh.id, isSchoolOpen: false, date: { gte: now } },
     orderBy: { date: "asc" },
@@ -96,7 +94,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     label: c.label ?? "School closed",
   }));
 
-  // Upcoming leave (next 5)
   const leave = await prisma.leave.findMany({
     where: { householdId: hh.id, endDate: { gte: now } },
     orderBy: { startDate: "asc" },
