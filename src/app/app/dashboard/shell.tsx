@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { getBudgetInsights } from "./budget-insights";
 import format from "date-fns/format";
-import { ReactElement, JSXElementConstructor, ReactNode, ReactPortal, Key } from "react";
 import { getDashboardData } from "./actions";
 import HearthPlanLogo from "@/components/HearthPlanLogo";
-import BudgetTrendChart from "@/components/BudgetTrendChart";
+import BudgetTrendChart, { PotDef } from "@/components/BudgetTrendChart";
 import { Button } from "@/components/ui/button";
+import React from "react";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -44,7 +44,7 @@ function Section({
     <section className={`rounded-2xl border bg-white p-4 sm:p-5 ring-1 ${ring}`}>
       <div className="flex items-center justify-between gap-3 mb-3">
         <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
-        <Link href={ctaHref} passHref >
+        <Link href={ctaHref} passHref>
           <Button className={`${pillBg} text-white cursor-pointer px-3 py-1.5 text-sm`}>
             {ctaLabel}
           </Button>
@@ -165,22 +165,44 @@ export default async function DashboardShell() {
   const topPotNote = budget?.topPotNote ?? "";
   const plannedIncomePence = budget?.plannedIncomePence ?? 0;
   const plannedExpensePence = budget?.plannedExpensePence ?? 0;
-  const plannedSpendTotal = Math.max(0, plannedExpensePence);
-  const plannedIncomeTotal = Math.max(0, plannedIncomePence);
 
-  const byMonth = budget?.byMonth ?? {};
-  const income = byMonth.income ?? {};
-  const expense = byMonth.expense ?? {};
-  const savings = byMonth.savings ?? {};
+  const byMonth = budget?.byMonth ?? { income: {}, expense: {}, savings: {} };
+
+  // Build cumulative lines for Savings and each pot.
+  // Chart expects: income, expenses (monthly), savingsCum (cumulative),
+  // plus dynamic pot keys: `pot:<id>` (cumulative).
+  const potDefs: PotDef[] = (budget?.savingsByPot ?? []).map((p: any) => ({
+    key: `pot:${p.id}`,
+    name: p.name,
+  }));
+
+  let savingsRun = 0;
+  const potRun: Record<string, number> = {};
 
   const trendData = MONTHS.map((m, i) => {
-    const idx = i + 1; 
-    return {
+    const idx = i + 1;
+
+    const incomeGBP = Math.round((byMonth.income?.[idx] ?? 0) / 100);
+    const expensesGBP = Math.round((byMonth.expense?.[idx] ?? 0) / 100);
+    const savingsGBP = Math.round((byMonth.savings?.[idx] ?? 0) / 100);
+
+    savingsRun += savingsGBP;
+
+    const point: Record<string, number | string> = {
       month: m,
-      income: Math.round((income[idx] ?? 0) / 100),   
-      expenses: Math.round((expense[idx] ?? 0) / 100), 
-      savings: Math.round((savings[idx] ?? 0) / 100),
+      income: incomeGBP,
+      expenses: expensesGBP,
+      savingsCum: savingsRun,
     };
+
+    for (const p of budget?.savingsByPot ?? []) {
+      const key = `pot:${p.id}`;
+      const monthGBP = Math.round(((p.monthly?.[idx] ?? 0) as number) / 100);
+      potRun[key] = (potRun[key] ?? 0) + monthGBP;
+      point[key] = potRun[key];
+    }
+
+    return point as any;
   });
 
   return (
@@ -188,6 +210,7 @@ export default async function DashboardShell() {
       <header className="flex items-center justify-between gap-3">
         <HearthPlanLogo size={50} variant="app" />
       </header>
+
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xs opacity-70">Household</div>
@@ -198,14 +221,17 @@ export default async function DashboardShell() {
         </Link>
       </div>
 
-
       <Section title="Budget overview" ctaHref="/app#budget" ctaLabel="Open Family Budget" tone="violet">
         <div className="grid gap-4">
-          <BudgetTrendChart data={trendData} />
+          <BudgetTrendChart data={trendData} potDefs={potDefs} />
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <Stat label="Planned income" value={plannedIncomeStr} sub={monthLabel} />
             <Stat label="Planned expenses" value={plannedExpenseStr} sub={monthLabel} />
-            <Stat label="Net plan" value={netPlanStr} sub={budget?.netPlanNote} />
+            <Stat
+              label="Net plan"
+              value={netPlanStr}
+              sub={budget?.netPlanNote}
+            />
             <Stat label="Saved so far" value={totalPotsStr} sub={topPotNote} />
           </div>
         </div>
@@ -214,8 +240,11 @@ export default async function DashboardShell() {
           <div className="mt-4">
             <div className="text-xs opacity-70 mb-2">Top planned categories</div>
             <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {budget.topCategories.map((c: { name: string; plannedStr: string }, i: number) => (
-                <li key={i} className="rounded-lg border px-3 py-2 bg-white flex items-center justify-between">
+              {budget.topCategories.map((c: any, i: number) => (
+                <li
+                  key={i}
+                  className="rounded-lg border px-3 py-2 bg-white flex items-center justify-between"
+                >
                   <span className="text-sm">{c.name}</span>
                   <span className="text-sm font-medium">{c.plannedStr}</span>
                 </li>
@@ -233,7 +262,7 @@ export default async function DashboardShell() {
               {s.closuresUpcoming.length === 0 && (
                 <li className="text-sm opacity-70">None in the near future.</li>
               )}
-              {s.closuresUpcoming.map((c: { dateISO: string; label: string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | ReactPortal | Promise<string | number | bigint | boolean | ReactPortal | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | null | undefined> | null | undefined; }, i: Key | null | undefined) => (
+              {s.closuresUpcoming.map((c: any, i: number) => (
                 <li key={i} className="text-sm flex items-center gap-2">
                   <span className="inline-block w-28 opacity-70">{formatDay(c.dateISO)}</span>
                   <span className="font-medium">{c.label}</span>
@@ -246,7 +275,7 @@ export default async function DashboardShell() {
             <div className="text-xs opacity-70 mb-2">Upcoming leave</div>
             <ul className="space-y-1">
               {s.upcomingLeave.length === 0 && <li className="text-sm opacity-70">No leave booked.</li>}
-              {s.upcomingLeave.map((l: { id: string; dateISO: string; label: string; member?: string | null }) => (
+              {s.upcomingLeave.map((l: any) => (
                 <li key={l.id} className="text-sm">
                   <span className="inline-block w-28 opacity-70">{formatDay(l.dateISO)}</span>
                   <span className="font-medium">{l.label}</span>
@@ -276,7 +305,7 @@ export default async function DashboardShell() {
               {s.nextActivities.length === 0 && (
                 <li className="text-sm opacity-70">No activities scheduled this week.</li>
               )}
-              {s.nextActivities.map((a: { id: Key | null | undefined; dateISO: string; label: string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | ReactPortal | Promise<string | number | bigint | boolean | ReactPortal | ReactElement<unknown, string | JSXElementConstructor<any>> | Iterable<ReactNode> | null | undefined> | null | undefined; }) => (
+              {s.nextActivities.map((a: any) => (
                 <li key={a.id} className="text-sm flex items-center gap-2">
                   <span className="inline-block w-28 opacity-70">{formatDay(a.dateISO)}</span>
                   <span className="font-medium">{a.label}</span>
