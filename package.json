@@ -11,12 +11,13 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "prisma:seed": "prisma db seed",
- "backfill:planner": "node src/scripts/backfillBudgetLines.js"
+    "backfill:planner": "node src/scripts/backfillBudgetLines.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.31.6",
     "@hookform/resolvers": "^5.2.1",
     "@prisma/client": "^6.15.0",
     "@radix-ui/react-checkbox": "^1.3.2",

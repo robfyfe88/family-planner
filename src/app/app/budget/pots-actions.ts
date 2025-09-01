@@ -1,28 +1,23 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getHouseholdIdOrThrow } from "@/lib/household";
 
 function nowMonthYear() {
   const d = new Date();
   return { month: d.getMonth() + 1, year: d.getFullYear() };
 }
 
-async function getHousehold() {
-  const hh = await prisma.household.findFirst({ select: { id: true } });
-  if (!hh) throw new Error("No household found");
-  return hh;
-}
-
 export async function fetchPots() {
-  const hh = await getHousehold();
+  const householdId = await getHouseholdIdOrThrow();
   return prisma.savingsPot.findMany({
-    where: { householdId: hh.id },
+    where: { householdId },
     orderBy: { name: "asc" },
   });
 }
 
 export async function upsertPot(pot: { id?: string; name: string }) {
-  const hh = await getHousehold();
+  const householdId = await getHouseholdIdOrThrow();
 
   if (pot.id) {
     return prisma.savingsPot.update({
@@ -33,25 +28,25 @@ export async function upsertPot(pot: { id?: string; name: string }) {
 
   return prisma.savingsPot.create({
     data: {
-      householdId: hh.id,
+      householdId,
       name: pot.name,
-      balancePence: 0, 
+      balancePence: 0,
     },
   });
 }
 
 export async function deletePot(id: string) {
-  const hh = await getHousehold();
-  await prisma.potMonthly.deleteMany({ where: { potId: id, householdId: hh.id } });
+  const householdId = await getHouseholdIdOrThrow();
+  await prisma.potMonthly.deleteMany({ where: { potId: id, householdId } });
   return prisma.savingsPot.delete({ where: { id } });
 }
 
 export async function fetchPotPlans(year?: number) {
-  const hh = await getHousehold();
+  const householdId = await getHouseholdIdOrThrow();
   const y = year ?? nowMonthYear().year;
 
   const rows = await prisma.potMonthly.findMany({
-    where: { householdId: hh.id, year: y },
+    where: { householdId, year: y },
     orderBy: [{ potId: "asc" }, { month: "asc" }],
   });
 
@@ -69,13 +64,13 @@ export async function upsertPotPlan(params: {
   year: number;
   amount: number; 
 }) {
-  const hh = await getHousehold();
+  const householdId = await getHouseholdIdOrThrow();
   const amountPence = Math.round((params.amount || 0) * 100);
 
   await prisma.potMonthly.upsert({
     where: {
       householdId_potId_month_year: {
-        householdId: hh.id,
+        householdId,
         potId: params.potId,
         month: params.month,
         year: params.year,
@@ -83,7 +78,7 @@ export async function upsertPotPlan(params: {
     },
     update: { amountPence },
     create: {
-      householdId: hh.id,
+      householdId,
       potId: params.potId,
       month: params.month,
       year: params.year,

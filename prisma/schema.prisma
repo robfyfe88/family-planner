@@ -34,16 +34,23 @@ model Household {
 }
 
 model Member {
-  id          String     @id @default(cuid())
-  householdId String
-  name        String
-  role        MemberRole
-  shortLabel  String?
-  color       String?
-  slot        String?
-  household   Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  householdId  String
+  name         String
+  role         MemberRole
+  shortLabel   String?
+  color        String?
+  slot         String?
+
+  userId       String?    @unique         
+  inviteEmail  String?                     
+
+  household    Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
   @@index([householdId])
+  @@index([inviteEmail])
+  // (optional) uncomment to prevent duplicate invites per household:
+  // @@unique([householdId, inviteEmail])
 }
 
 enum MemberRole {

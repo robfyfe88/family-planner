@@ -1,12 +1,8 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import {
-  startOfMonth,
-  endOfMonth,
-  addDays,
-  format,
-} from "date-fns";
+import { startOfMonth, endOfMonth, addDays } from "date-fns";
+import { getHouseholdIdOrThrow } from "@/lib/household";
 
 export type DashboardData = {
   householdName: string;
@@ -23,32 +19,24 @@ export type DashboardData = {
   upcomingLeave: Array<{ id: string; member?: string | null; dateISO: string; label: string }>;
 };
 
-const toISODate = (d: Date) => d.toISOString().slice(0, 10); 
+const toISODate = (d: Date) => d.toISOString().slice(0, 10);
 
 export async function getDashboardData(): Promise<DashboardData> {
-  const hh = await prisma.household.findFirst();
-  if (!hh) {
-    return {
-      householdName: "Your Household",
-      membersCount: 0,
-      weeklyActivities: 0,
-      activityLoadByWeekday: [0, 0, 0, 0, 0, 0, 0],
-      nextActivities: [],
-      closuresThisMonth: 0,
-      nextClosureISO: null,
-      closuresUpcoming: [],
-      upcomingLeave: [],
-    };
-  }
+  const householdId = await getHouseholdIdOrThrow();
+
+  const hh = await prisma.household.findUnique({
+    where: { id: householdId },
+    select: { id: true, name: true },
+  });
 
   const now = new Date();
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
 
-  const membersCount = await prisma.member.count({ where: { householdId: hh.id } });
+  const membersCount = await prisma.member.count({ where: { householdId } });
 
   const schedules = await prisma.schedule.findMany({
-    where: { householdId: hh.id },
+    where: { householdId },
     include: { activity: true },
   });
 
@@ -58,7 +46,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   for (let i = 0; i < 7; i++) {
     const d = addDays(now, i);
-    const wd = d.getDay(); // 0..6
+    const wd = d.getDay(); 
     const todays = schedules.filter((s: { weekday: any; }) => (s.weekday ?? -1) === wd);
     activityLoadByWeekday[wd] += todays.length;
     weeklyActivities += todays.length;
@@ -75,17 +63,15 @@ export async function getDashboardData(): Promise<DashboardData> {
   }
 
   const closures = await prisma.schoolDay.findMany({
-    where: { householdId: hh.id, date: { gte: monthStart, lte: monthEnd }, isSchoolOpen: false },
+    where: { householdId, date: { gte: monthStart, lte: monthEnd }, isSchoolOpen: false },
     orderBy: { date: "asc" },
   });
   const closuresThisMonth = closures.length;
-  const nextClosureISO =
-    closures.find((c: { date: { getTime: () => number; }; }) => c.date.getTime() >= now.getTime())?.date
-      ? toISODate(closures.find((c: { date: { getTime: () => number; }; }) => c.date.getTime() >= now.getTime())!.date)
-      : null;
+  const upcoming = closures.find((c: { date: { getTime: () => number; }; }) => c.date.getTime() >= now.getTime());
+  const nextClosureISO = upcoming ? toISODate(upcoming.date) : null;
 
   const closuresUpcomingRaw = await prisma.schoolDay.findMany({
-    where: { householdId: hh.id, isSchoolOpen: false, date: { gte: now } },
+    where: { householdId, isSchoolOpen: false, date: { gte: now } },
     orderBy: { date: "asc" },
     take: 5,
   });
@@ -95,14 +81,16 @@ export async function getDashboardData(): Promise<DashboardData> {
   }));
 
   const leave = await prisma.leave.findMany({
-    where: { householdId: hh.id, endDate: { gte: now } },
+    where: { householdId, endDate: { gte: now } },
     orderBy: { startDate: "asc" },
     take: 5,
   });
 
-  const memberById = new Map(
-    (await prisma.member.findMany({ where: { householdId: hh.id } })).map((m: { id: any; name: any; }) => [m.id, m.name] as const)
-  );
+  const members = await prisma.member.findMany({
+    where: { householdId },
+    select: { id: true, name: true },
+  });
+  const memberById = new Map(members.map((m: { id: any; name: any; }) => [m.id, m.name] as const));
 
   const upcomingLeave: DashboardData["upcomingLeave"] = leave.map((l: { id: any; memberId: unknown; startDate: Date; type: any; }) => ({
     id: l.id,
@@ -112,7 +100,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   }));
 
   return {
-    householdName: hh.name,
+    householdName: hh?.name ?? "Your Household",
     membersCount,
     weeklyActivities,
     activityLoadByWeekday,

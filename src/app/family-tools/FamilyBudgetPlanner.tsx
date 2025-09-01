@@ -992,7 +992,6 @@ function BudgetEditorCompact({
                     </Button>
                 </div>
 
-                {/* Optional: quick filter by owner */}
                 {rows.length > 0 && (
                     <div className="flex items-center gap-2">
                         <span className="text-sm opacity-70">Filter</span>

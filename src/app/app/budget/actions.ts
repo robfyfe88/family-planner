@@ -1,32 +1,19 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getHouseholdIdOrThrow } from "@/lib/household";
 
-// ---------- Types shared with the client ----------
 export type Owner = "joint" | "A" | "B";
 export type Kind = "income" | "expense";
 
 export type Row = {
-  id?: string;            // BudgetLine.id
+  id?: string;
   label: string;
-  amount: number;         // GBP decimal
+  amount: number; 
   owner?: Owner;
 };
 
-// The UI calls these:
 export type Scope = "this-month" | "from-now-on" | "entire-range";
-
-// ---------- Helpers ----------
-function nowMonthYear() {
-  const d = new Date();
-  return { month: d.getMonth() + 1, year: d.getFullYear() };
-}
-
-async function getHousehold() {
-  const hh = await prisma.household.findFirst({ select: { id: true } });
-  if (!hh) throw new Error("No household found");
-  return hh;
-}
 
 function monthStart(year: number, month1to12: number) {
   return new Date(Date.UTC(year, month1to12 - 1, 1, 0, 0, 0, 0));
@@ -44,19 +31,16 @@ function fromPence(p: number) {
   return (p || 0) / 100;
 }
 
-// --------------------------------------------------
-// Fetch rows for a specific month from BudgetLine + overrides
-// --------------------------------------------------
 export async function fetchBudgetRowsForMonth(
   year: number,
   month1to12: number
 ): Promise<{ incomes: Row[]; expenses: Row[] }> {
-  const hh = await getHousehold();
+  const householdId = await getHouseholdIdOrThrow();
   const target = monthStart(year, month1to12);
 
   const lines = await prisma.budgetLine.findMany({
     where: {
-      householdId: hh.id,
+      householdId,
       effectiveFrom: { lte: target },
       OR: [{ effectiveTo: null }, { effectiveTo: { gte: target } }],
     },
@@ -69,7 +53,7 @@ export async function fetchBudgetRowsForMonth(
     orderBy: [{ label: "asc" }],
   });
 
-  const toRow = (l: typeof lines[number]): Row => ({
+  const toRow = (l: (typeof lines)[number]): Row => ({
     id: l.id,
     label: l.label,
     amount: fromPence(l.overrides[0]?.amountPence ?? l.defaultAmountPence ?? 0),
@@ -82,60 +66,56 @@ export async function fetchBudgetRowsForMonth(
   };
 }
 
-// --------------------------------------------------
-// Upsert a row with explicit scope (this-month / from-now-on / entire-range)
-// --------------------------------------------------
 export async function upsertBudgetRowScoped(
   flow: Kind,
   payload: {
-    id?: string;                 // BudgetLine.id if known
+    id?: string; 
     label: string;
-    amount: number;              // GBP decimal
+    amount: number; 
     owner?: Owner;
     year: number;
     month1to12: number;
     scope: Scope;
   }
 ): Promise<Row> {
-  const hh = await getHousehold();
+  const householdId = await getHouseholdIdOrThrow();
   const label = normalizeLabel(payload.label);
   const owner = (payload.owner ?? "joint") as Owner;
   const defaultAmountPence = toPence(payload.amount);
   const effFrom = monthStart(payload.year, payload.month1to12);
 
   return prisma.$transaction(async (tx : any) => {
-    // 1) Find or create a BudgetLine
-    let line = payload.id
-      ? await tx.budgetLine.findFirst({
-          where: { id: payload.id, householdId: hh.id },
-        })
-      : await tx.budgetLine.findFirst({
-          where: {
-            householdId: hh.id,
-            label,
-            flow,
-            owner,
-            effectiveFrom: { lte: effFrom },
-            OR: [{ effectiveTo: null }, { effectiveTo: { gte: effFrom } }],
-          },
-          orderBy: [{ effectiveFrom: "desc" }],
-        });
+    let line =
+      payload.id
+        ? await tx.budgetLine.findFirst({
+            where: { id: payload.id, householdId },
+          })
+        : await tx.budgetLine.findFirst({
+            where: {
+              householdId,
+              label,
+              flow,
+              owner,
+              effectiveFrom: { lte: effFrom },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gte: effFrom } }],
+            },
+            orderBy: [{ effectiveFrom: "desc" }],
+          });
 
     if (!line) {
       line = await tx.budgetLine.create({
         data: {
-          householdId: hh.id,
+          householdId,
           label,
           flow,
           owner,
-          recurrence: "monthly", // default behaviour
+          recurrence: "monthly", 
           effectiveFrom: effFrom,
           effectiveTo: null,
           defaultAmountPence,
         },
       });
     } else {
-      // If basic identity fields changed (label/flow/owner), update them
       if (line.label !== label || line.flow !== flow || (line.owner as Owner) !== owner) {
         line = await tx.budgetLine.update({
           where: { id: line.id },
@@ -144,14 +124,18 @@ export async function upsertBudgetRowScoped(
       }
     }
 
-    // 2) Apply scope
     if (payload.scope === "this-month") {
-      // Just this month -> upsert override for (year,month)
       await tx.budgetLineOverride.upsert({
-        where: { lineId_year_month: { lineId: line.id, year: payload.year, month: payload.month1to12 } },
+        where: {
+          lineId_year_month: {
+            lineId: line.id,
+            year: payload.year,
+            month: payload.month1to12,
+          },
+        },
         update: { amountPence: defaultAmountPence },
         create: {
-          householdId: hh.id,
+          householdId,
           lineId: line.id,
           year: payload.year,
           month: payload.month1to12,
@@ -159,7 +143,6 @@ export async function upsertBudgetRowScoped(
         },
       });
     } else if (payload.scope === "from-now-on") {
-      // Update default and clear overrides from (year,month) onward
       await tx.budgetLine.update({
         where: { id: line.id },
         data: { defaultAmountPence },
@@ -174,7 +157,6 @@ export async function upsertBudgetRowScoped(
         },
       });
     } else {
-      // entire-range: set default and remove all overrides
       await tx.budgetLine.update({
         where: { id: line.id },
         data: { defaultAmountPence },
@@ -182,13 +164,24 @@ export async function upsertBudgetRowScoped(
       await tx.budgetLineOverride.deleteMany({ where: { lineId: line.id } });
     }
 
-    // 3) Return the current-month value for convenience
     const ov = await tx.budgetLineOverride.findUnique({
-      where: { lineId_year_month: { lineId: line.id, year: payload.year, month: payload.month1to12 } },
+      where: {
+        lineId_year_month: {
+          lineId: line.id,
+          year: payload.year,
+          month: payload.month1to12,
+        },
+      },
       select: { amountPence: true },
     });
 
-    const amountForMonth = ov?.amountPence ?? (await tx.budgetLine.findUnique({ where: { id: line.id }, select: { defaultAmountPence: true } }))?.defaultAmountPence ?? 0;
+    const amountForMonth =
+      ov?.amountPence ??
+      (await tx.budgetLine.findUnique({
+        where: { id: line.id },
+        select: { defaultAmountPence: true },
+      }))?.defaultAmountPence ??
+      0;
 
     return {
       id: line.id,
@@ -199,40 +192,36 @@ export async function upsertBudgetRowScoped(
   });
 }
 
-
 export async function deleteBudgetRowScoped(
   lineId: string,
   scope: Scope,
   year: number,
   month1to12: number
 ): Promise<{ ok: true }> {
-  const hh = await getHousehold();
+  const householdId = await getHouseholdIdOrThrow();
 
   await prisma.$transaction(async (tx : any) => {
     const line = await tx.budgetLine.findFirst({
-      where: { id: lineId, householdId: hh.id },
+      where: { id: lineId, householdId },
       select: { id: true },
     });
     if (!line) return;
 
     if (scope === "this-month") {
-      // Only remove this month (override = 0)
       await tx.budgetLineOverride.upsert({
         where: { lineId_year_month: { lineId, year, month: month1to12 } },
         update: { amountPence: 0 },
-        create: { householdId: hh.id, lineId, year, month: month1to12, amountPence: 0 },
+        create: { householdId, lineId, year, month: month1to12, amountPence: 0 },
       });
       return;
     }
 
     if (scope === "from-now-on") {
-      // Stop the recurrence going forward: end the line at the end of the previous month
-      const cutPoint = monthStart(year, month1to12).getTime() - 1; // UTC end of previous month
+      const cutPoint = monthStart(year, month1to12).getTime() - 1;
       await tx.budgetLine.update({
         where: { id: lineId },
         data: { effectiveTo: new Date(cutPoint) },
       });
-      // Remove any future overrides (>= selected month)
       await tx.budgetLineOverride.deleteMany({
         where: {
           lineId,
@@ -245,7 +234,6 @@ export async function deleteBudgetRowScoped(
       return;
     }
 
-    // entire-range: purge the line and its overrides completely
     await tx.budgetLineOverride.deleteMany({ where: { lineId } });
     await tx.budgetLine.delete({ where: { id: lineId } });
   });

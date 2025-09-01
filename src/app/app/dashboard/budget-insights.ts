@@ -1,9 +1,9 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getHouseholdIdOrThrow } from "@/lib/household";
 import format from "date-fns/format";
 
-// ---------- helpers ----------
 const money = (pence: number) =>
   new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -11,12 +11,6 @@ const money = (pence: number) =>
     maximumFractionDigits: 0,
   }).format((pence ?? 0) / 100);
 
-const monthStart = (year: number, m1to12: number) =>
-  new Date(Date.UTC(year, m1to12 - 1, 1, 0, 0, 0, 0));
-
-type Flow = "income" | "expense" | "transfer";
-
-// ---------- shape (unchanged) ----------
 export type BudgetInsights = {
   monthLabel: string;
   plannedIncomePence: number;
@@ -32,15 +26,15 @@ export type BudgetInsights = {
   topPotNote: string;
 
   byMonth: {
-    income: Record<number, number>;   // pence
-    expense: Record<number, number>;  // pence
-    savings: Record<number, number>;  // pence (from PotMonthly)
+    income: Record<number, number>;   
+    expense: Record<number, number>;  
+    savings: Record<number, number>;  
   };
 
   topCategories: Array<{
     id: string;
     name: string;
-    flow: Flow;
+    flow: "income" | "expense" | "transfer";
     plannedPence: number;
     plannedStr: string;
   }>;
@@ -53,118 +47,43 @@ export type BudgetInsights = {
   }>;
 };
 
-// ---------- main ----------
+function monthStartUTC(year: number, month1to12: number) {
+  return new Date(Date.UTC(year, month1to12 - 1, 1, 0, 0, 0, 0));
+}
+
 export async function getBudgetInsights(): Promise<BudgetInsights> {
-  const hh = await prisma.household.findFirst({
-    select: { id: true, name: true },
-  });
+  const householdId = await getHouseholdIdOrThrow();
 
   const now = new Date();
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
 
-  // Empty shape when no household exists
-  if (!hh) {
-    return {
-      monthLabel: format(now, "MMM yyyy"),
+  const yearStart = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
+  const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
 
-      plannedIncomePence: 0,
-      plannedExpensePence: 0,
-      netPlanPence: 0,
-      totalPotsPence: 0,
-
-      plannedIncomeStr: "£0",
-      plannedExpenseStr: "£0",
-      netPlanStr: "£0",
-      netPlanNote: "No data",
-      totalPotsStr: "£0",
-      topPotNote: "No pots",
-
-      byMonth: { income: {}, expense: {}, savings: {} },
-      topCategories: [],
-      potBalances: [],
-    };
-  }
-
-  // ---------- CURRENT MONTH TOTALS (BudgetLine + Override) ----------
-  const targetStart = monthStart(year, month);
-
-  const currentLines = await prisma.budgetLine.findMany({
+  const lines = await prisma.budgetLine.findMany({
     where: {
-      householdId: hh.id,
-      effectiveFrom: { lte: targetStart },
-      OR: [{ effectiveTo: null }, { effectiveTo: { gte: targetStart } }],
+      householdId,
+      effectiveFrom: { lte: yearEnd },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: yearStart } }],
     },
-    include: {
-      overrides: { where: { year, month }, select: { amountPence: true } },
-      category: { select: { id: true, name: true, flow: true } },
-    },
-    orderBy: { label: "asc" },
-  });
-
-  let plannedIncomePence = 0;
-  let plannedExpensePence = 0;
-
-  // Aggregate for "top categories" (only when a category is attached)
-  const categoriesAgg = new Map<
-    string,
-    { id: string; name: string; flow: Flow; plannedPence: number }
-  >();
-
-  for (const l of currentLines) {
-    const amt = (l.overrides[0]?.amountPence ?? l.defaultAmountPence ?? 0);
-    if (l.flow === "income") plannedIncomePence += amt;
-    else if (l.flow === "expense") plannedExpensePence += amt;
-
-    if (l.category) {
-      const prev = categoriesAgg.get(l.category.id);
-      const next = (prev?.plannedPence ?? 0) + amt;
-      categoriesAgg.set(l.category.id, {
-        id: l.category.id,
-        name: l.category.name,
-        flow: l.category.flow as Flow,
-        plannedPence: next,
-      });
-    }
-  }
-
-  const topCategories = Array.from(categoriesAgg.values())
-    .sort((a, b) => b.plannedPence - a.plannedPence)
-    .slice(0, 5)
-    .map((c) => ({ ...c, plannedStr: money(c.plannedPence) }));
-
-  // ---------- POTS ----------
-  const pots = await prisma.savingsPot.findMany({
-    where: { householdId: hh.id },
-    orderBy: { balancePence: "desc" },
-  });
-  const totalPotsPence = pots.reduce((s : any, p : any) => s + (p.balancePence ?? 0), 0);
-  const topPot = pots[0];
-
-  // ---------- YEAR SERIES (12 months) ----------
-  // Fetch all lines that can affect this year + all overrides for the year.
-  const yearLines = await prisma.budgetLine.findMany({
-    where: {
-      householdId: hh.id,
-      OR: [
-        { effectiveTo: null, effectiveFrom: { lte: monthStart(year, 12) } },
-        {
-          AND: [
-            { effectiveFrom: { lte: monthStart(year, 12) } },
-            { effectiveTo: { gte: monthStart(year, 1) } },
-          ],
-        },
-      ],
-    },
-    include: {
-      overrides: { where: { year }, select: { month: true, amountPence: true } },
+    select: {
+      id: true,
+      label: true,
+      flow: true,
+      defaultAmountPence: true,
+      effectiveFrom: true,
+      effectiveTo: true,
     },
   });
 
-  const potPlansYear = await prisma.potMonthly.findMany({
-    where: { householdId: hh.id, year },
-    select: { month: true, amountPence: true },
+  const overrides = await prisma.budgetLineOverride.findMany({
+    where: { householdId, year },
+    select: { lineId: true, month: true, amountPence: true },
   });
+
+  const ovMap = new Map<string, number>(); 
+  for (const o of overrides) ovMap.set(`${o.lineId}:${o.month}`, o.amountPence ?? 0);
 
   const byMonth: BudgetInsights["byMonth"] = {
     income: {},
@@ -172,43 +91,87 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
     savings: {},
   };
 
-  // Pre-fill savings by month from PotMonthly
-  for (const p of potPlansYear) {
-    if (p.month >= 1 && p.month <= 12) {
-      byMonth.savings[p.month] = (byMonth.savings[p.month] ?? 0) + (p.amountPence ?? 0);
-    }
+  const potPlans = await prisma.potMonthly.findMany({
+    where: { householdId, year },
+    select: { month: true, amountPence: true },
+  });
+  const savingsByMonth: Record<number, number> = {};
+  for (let m = 1; m <= 12; m++) savingsByMonth[m] = 0;
+  for (const p of potPlans) {
+    savingsByMonth[p.month] = (savingsByMonth[p.month] ?? 0) + (p.amountPence ?? 0);
+  }
+  for (let m = 1; m <= 12; m++) byMonth.savings[m] = savingsByMonth[m] ?? 0;
+
+  function lineAmountForMonth(
+    line: (typeof lines)[number],
+    m: number
+  ): number {
+    const key = `${line.id}:${m}`;
+    if (ovMap.has(key)) return ovMap.get(key)!;
+
+    const ms = monthStartUTC(year, m);
+    if (line.effectiveFrom > ms) return 0;
+    if (line.effectiveTo && line.effectiveTo < ms) return 0;
+    return line.defaultAmountPence ?? 0;
   }
 
-  // Walk each month and sum active lines (override-if-present else default)
+  let plannedIncomePence = 0;
+  let plannedExpensePence = 0;
+
+  const aggCurrentMonth = new Map<
+    string,
+    { id: string; name: string; flow: "income" | "expense" | "transfer"; plannedPence: number }
+  >();
+
   for (let m = 1; m <= 12; m++) {
-    const mStart = monthStart(year, m);
     let inc = 0;
     let exp = 0;
 
-    for (const l of yearLines) {
-      const active =
-        l.effectiveFrom <= mStart &&
-        (l.effectiveTo === null || l.effectiveTo >= mStart);
-      if (!active) continue;
+    for (const l of lines) {
+      const p = lineAmountForMonth(l, m);
+      if (!p) continue;
 
-      const ov = l.overrides.find((o : any) => o.month === m)?.amountPence;
-      const amt = ov ?? (l.defaultAmountPence ?? 0);
+      if (l.flow === "income") inc += p;
+      else if (l.flow === "expense") exp += p;
 
-      if (l.flow === "income") inc += amt;
-      else if (l.flow === "expense") exp += amt;
+      if (m === month) {
+        const prev = aggCurrentMonth.get(l.id);
+        const nextAmt = (prev?.plannedPence ?? 0) + p;
+        aggCurrentMonth.set(l.id, {
+          id: l.id,
+          name: l.label,
+          flow: l.flow as any,
+          plannedPence: nextAmt,
+        });
+      }
     }
 
     byMonth.income[m] = inc;
     byMonth.expense[m] = exp;
-    if (!(m in byMonth.savings)) byMonth.savings[m] = 0;
+
+    if (m === month) {
+      plannedIncomePence = inc;
+      plannedExpensePence = exp;
+    }
   }
 
-  // ---------- Final formatting ----------
   const netPlanPence = plannedIncomePence - plannedExpensePence;
-  const monthLabel = format(now, "MMM yyyy");
+
+  const pots = await prisma.savingsPot.findMany({
+    where: { householdId },
+    orderBy: { balancePence: "desc" },
+    select: { id: true, name: true, balancePence: true },
+  });
+  const totalPotsPence = pots.reduce((s : any, p : any) => s + (p.balancePence ?? 0), 0);
+  const topPot = pots[0];
+
+  const topCategories = Array.from(aggCurrentMonth.values())
+    .sort((a, b) => b.plannedPence - a.plannedPence)
+    .slice(0, 5)
+    .map((c) => ({ ...c, plannedStr: money(c.plannedPence) }));
 
   return {
-    monthLabel,
+    monthLabel: format(now, "MMM yyyy"),
 
     plannedIncomePence,
     plannedExpensePence,
