@@ -153,7 +153,7 @@ function UserMenu({
           <DropdownMenuItem
             onSelect={(e) => {
               e.preventDefault();
-              setProfileOpen(true);
+              router.push("/app/profile");
             }}
           >
             <User className="mr-2 h-4 w-4" />
@@ -164,7 +164,12 @@ function UserMenu({
             <Bell className="mr-2 h-4 w-4" />
             Notifications
           </DropdownMenuItem>
-          <DropdownMenuItem disabled className="cursor-not-allowed opacity-60">
+          <DropdownMenuItem
+            onSelect={(e) => {
+              e.preventDefault();
+              router.push("/app/subscribe");
+            }}
+          >
             <CreditCard className="mr-2 h-4 w-4" />
             Subscription
           </DropdownMenuItem>
@@ -186,8 +191,6 @@ function UserMenu({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </>
   );
 }
@@ -212,220 +215,5 @@ function GoogleIcon() {
         d="M24 48c6.5 0 12-2.1 16-5.8l-7.4-5.7c-2.1 1.4-4.8 2.2-8.6 2.2-6.1 0-11.1-4.8-12.9-11.1l-8.6 7.7C6.4 42.6 14.6 48 24 48z"
       />
     </svg>
-  );
-}
-
-/* ------------------------ Profile Dialog ------------------------ */
-
-function ProfileDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const [loading, setLoading] = React.useState(true);
-  const [savingName, setSavingName] = React.useState(false);
-  const [householdName, setHouseholdName] = React.useState("");
-  const [members, setMembers] = React.useState<MemberLite[]>([]);
-
-  const [newMemberName, setNewMemberName] = React.useState("");
-  const [newMemberRole, setNewMemberRole] = React.useState<"parent" | "child">(
-    "parent"
-  );
-
-  React.useEffect(() => {
-    if (!open) return;
-    (async () => {
-      setLoading(true);
-      try {
-        const data = await fetchProfileData();
-        setHouseholdName(data.householdName ?? "Household");
-        setMembers(data.members ?? []);
-      } catch {
-        // no-op
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [open]);
-
-  const onSaveHousehold = async () => {
-    const name = (householdName || "").trim();
-    if (!name) return;
-    setSavingName(true);
-    try {
-      const updated = await updateHouseholdName(name);
-      setHouseholdName(updated.name);
-    } finally {
-      setSavingName(false);
-    }
-  };
-
-  const onAddMember = async () => {
-    const name = (newMemberName || "").trim();
-    if (!name) return;
-    try {
-      const created = await addMember({ name, role: newMemberRole });
-      setMembers((m) => [...m, created]);
-      setNewMemberName("");
-    } catch {
-    }
-  };
-
-  const onRemoveMember = async (id: string) => {
-    const prev = members;
-    setMembers((m) => m.filter((x) => x.id !== id));
-    try {
-      await removeMember(id);
-    } catch {
-      setMembers(prev);
-    }
-  };
-
-  const onUpdateMember = async (id: string, patch: Partial<MemberLite>) => {
-    const prev = members;
-    setMembers((m) => m.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-    try {
-      await updateMember(id, patch);
-    } catch {
-      setMembers(prev);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl sm:max-w-6xl max-h-[60vh] h-full overflow-auto">
-        <DialogHeader>
-          <DialogTitle>Profile & Household</DialogTitle>
-          <DialogDescription>
-            Update your household name and manage family members.
-          </DialogDescription>
-        </DialogHeader>
-        <section className="space-y-2">
-          <h3 className="text-sm font-medium">Household</h3>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              className="w-full sm:w-96"
-              value={householdName}
-              onChange={(e) => setHouseholdName(e.target.value)}
-              placeholder="Household name"
-              disabled={loading}
-            />
-            <Button
-              onClick={onSaveHousehold}
-              disabled={loading || savingName || !householdName.trim()}
-              className="inline-flex items-center gap-2"
-            >
-              <Save className="h-4 w-4" />
-              Save
-            </Button>
-          </div>
-        </section>
-
-        {/* Members */}
-        <section className="space-y-3">
-          <h3 className="text-sm font-medium">Family Members</h3>
-          <div className="rounded-xl border overflow-hidden">
-            <div className="max-h-112 overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white">
-                  <tr>
-                    <th className="text-left px-3 py-2 w-[55%]">Name</th>
-                    <th className="text-left px-3 py-2 w-[30%]">Role</th>
-                    <th className="text-right px-2 py-2 w-[15%]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="[&>tr:nth-child(even)]:bg-[rgba(0,0,0,0.02)]">
-                  {loading && (
-                    <tr>
-                      <td className="px-3 py-3" colSpan={3}>
-                        <div className="h-4 w-40 bg-gray-100 animate-pulse rounded" />
-                      </td>
-                    </tr>
-                  )}
-                  {!loading && members.length === 0 && (
-                    <tr>
-                      <td colSpan={3} className="px-3 py-6 text-center opacity-70">
-                        No members yet. Add one below.
-                      </td>
-                    </tr>
-                  )}
-                  {members.map((m) => (
-                    <tr key={m.id}>
-                      <td className="px-3 py-2">
-                        <Input
-                          className="w-64 bg-transparent"
-                          value={m.name}
-                          onChange={(e) =>
-                            onUpdateMember(m.id, { name: e.target.value })
-                          }
-                          onBlur={(e) =>
-                            onUpdateMember(m.id, { name: e.target.value.trim() })
-                          }
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <Select
-                          value={m.role}
-                          onValueChange={(v) =>
-                            onUpdateMember(m.id, { role: v as "parent" | "child" })
-                          }
-                        >
-                          <SelectTrigger className="h-9 w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="parent">Parent</SelectItem>
-                            <SelectItem value="child">Child</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td className="px-2 py-2 text-right">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          aria-label="Remove"
-                          onClick={() => onRemoveMember(m.id)}
-                        >
-                          <Trash className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Add new row */}
-            <div className="flex items-center gap-2 px-3 py-2 border-t bg-[var(--card-bg)]">
-              <Input
-                className="flex-1"
-                placeholder="Member name"
-                value={newMemberName}
-                onChange={(e) => setNewMemberName(e.target.value)}
-              />
-              <Select
-                value={newMemberRole}
-                onValueChange={(v) =>
-                  setNewMemberRole(v as "parent" | "child")
-                }
-              >
-                <SelectTrigger className="h-9 w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="parent">Parent</SelectItem>
-                  <SelectItem value="child">Child</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={onAddMember} disabled={!newMemberName.trim()}>
-                Add member
-              </Button>
-            </div>
-          </div>
-        </section>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -11,6 +11,15 @@ datasource db {
 model Household {
   id                String              @id @default(cuid())
   name              String
+  // NEW
+  subscriptionTier   SubscriptionTier    @default(free)
+  subscriptionStatus SubscriptionStatus  @default(active)
+  // Optional billing fields (handy later)
+  billingProvider    String?             // "stripe"
+  stripeCustomerId   String?
+  stripeSubscriptionId String?
+  currentPeriodEnd   DateTime?
+
   members           Member[]
   activities        Activity[]
   schedules         Schedule[]
@@ -28,7 +37,6 @@ model Household {
   RecurringTemplate RecurringTemplate[]
   PotMonthly        PotMonthly[]
 
-  // NEW back-relations for planner
   budgetLines         BudgetLine[]         @relation("HouseholdBudgetLines")
   budgetLineOverrides BudgetLineOverride[] @relation("HouseholdBudgetLineOverrides")
 }
@@ -42,20 +50,33 @@ model Member {
   color        String?
   slot         String?
 
-  userId       String?    @unique         
-  inviteEmail  String?                     
+  userId       String?    @unique
+  inviteEmail  String?
 
   household    Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
   @@index([householdId])
   @@index([inviteEmail])
-  // (optional) uncomment to prevent duplicate invites per household:
-  // @@unique([householdId, inviteEmail])
 }
 
 enum MemberRole {
   parent
+  caregiver   
   child
+}
+
+enum SubscriptionTier {
+  free
+  pro
+  family
+  trial // optional – treat like "pro" in logic if you use it
+}
+
+enum SubscriptionStatus {
+  active
+  trialing
+  past_due
+  canceled
 }
 
 model Activity {
