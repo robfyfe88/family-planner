@@ -199,27 +199,55 @@ export async function upsertBudgetRowScoped(
   });
 }
 
-// --------------------------------------------------
-// Delete: treat as "remove for this month" (set override to 0)
-// If a line ends up unused elsewhere you can garbage-collect separately.
-// --------------------------------------------------
-export async function deleteBudgetRow(lineId: string): Promise<{ ok: true }> {
+
+export async function deleteBudgetRowScoped(
+  lineId: string,
+  scope: Scope,
+  year: number,
+  month1to12: number
+): Promise<{ ok: true }> {
   const hh = await getHousehold();
-  const { month, year } = nowMonthYear();
 
-  // Ensure the line exists and belongs to the household
-  const line = await prisma.budgetLine.findFirst({
-    where: { id: lineId, householdId: hh.id },
-    select: { id: true },
-  });
-  if (!line) {
-    return { ok: true };
-  }
+  await prisma.$transaction(async (tx : any) => {
+    const line = await tx.budgetLine.findFirst({
+      where: { id: lineId, householdId: hh.id },
+      select: { id: true },
+    });
+    if (!line) return;
 
-  await prisma.budgetLineOverride.upsert({
-    where: { lineId_year_month: { lineId, year, month } },
-    update: { amountPence: 0 },
-    create: { householdId: hh.id, lineId, year, month, amountPence: 0 },
+    if (scope === "this-month") {
+      // Only remove this month (override = 0)
+      await tx.budgetLineOverride.upsert({
+        where: { lineId_year_month: { lineId, year, month: month1to12 } },
+        update: { amountPence: 0 },
+        create: { householdId: hh.id, lineId, year, month: month1to12, amountPence: 0 },
+      });
+      return;
+    }
+
+    if (scope === "from-now-on") {
+      // Stop the recurrence going forward: end the line at the end of the previous month
+      const cutPoint = monthStart(year, month1to12).getTime() - 1; // UTC end of previous month
+      await tx.budgetLine.update({
+        where: { id: lineId },
+        data: { effectiveTo: new Date(cutPoint) },
+      });
+      // Remove any future overrides (>= selected month)
+      await tx.budgetLineOverride.deleteMany({
+        where: {
+          lineId,
+          OR: [
+            { year: { gt: year } },
+            { year, month: { gte: month1to12 } },
+          ],
+        },
+      });
+      return;
+    }
+
+    // entire-range: purge the line and its overrides completely
+    await tx.budgetLineOverride.deleteMany({ where: { lineId } });
+    await tx.budgetLine.delete({ where: { id: lineId } });
   });
 
   return { ok: true };
