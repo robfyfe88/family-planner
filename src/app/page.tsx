@@ -1,5 +1,17 @@
 import SignInButton from "@/components/SignInButton";
 import HearthPlanLogo from "@/components/HearthPlanLogo";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Check as CheckIcon, Shield, Crown, Users } from "lucide-react";
+
+function Check({ text }: { text: string }) {
+  return (
+    <li className="flex items-start gap-2">
+      <CheckIcon className="h-4 w-4 mt-0.5" />
+      <span>{text}</span>
+    </li>
+  );
+}
 
 
 export default function LandingPage() {
@@ -10,7 +22,6 @@ export default function LandingPage() {
           <HearthPlanLogo size={50} variant="app" />
         </div>
         <div className="flex items-center gap-2">
-
           <SignInButton />
         </div>
       </header>
@@ -93,7 +104,7 @@ export default function LandingPage() {
       </section>
 
       {/* How it works */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
         <div className="card">
           <h2 className="text-xl font-semibold mb-3">How it works</h2>
           <ol className="grid sm:grid-cols-3 gap-4 text-sm">
@@ -114,56 +125,64 @@ export default function LandingPage() {
       </section>
 
       {/* Pricing (member-based) */}
-      {/* <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8 mb-20">
         <div className="grid md:grid-cols-3 gap-6">
-          <div className="pricing-card p-4">
-            <div className="pricing-head">
+          {/* Free */}
+          <div className="rounded-xl border p-4 bg-white">
+            <div className="flex items-center justify-between">
               <span className="pill pill-slate">Free</span>
-              <div className="price">£0</div>
+              <Shield className="h-5 w-5 opacity-60" />
             </div>
-            <ul className="text-sm space-y-2">
+            <div className="price mt-1">£0</div>
+            <ul className="text-sm space-y-2 mt-3">
               <Check text="1 parent" />
               <Check text="Unlimited children" />
-              <Check text="All three planners" />
+              <Check text="Budget and Childcare Planner" />
               <Check text="Local exports" />
             </ul>
           </div>
-          <div className="pricing-card featured border-[2px] border-[var(--accent-2)] p-4 shadow-md">
-            <div className="pricing-head">
-              <span className="pill pill-blue">Plus</span>
-              <div className="price">£4.99/mo</div>
+
+          {/* Pro */}
+          <div className="rounded-xl border p-4 bg-white">
+            <div className="flex items-center justify-between">
+              <span className="pill pill-emerald">Pro</span>
+              <Crown className="h-5 w-5 opacity-60" />
             </div>
-            <ul className="text-sm space-y-2">
-              <Check text="2 parents" />
+            <div className="price mt-1">£4.99/mo</div>
+            <ul className="text-sm space-y-2 mt-3">
+              <Check text="Up to 2 parents" />
               <Check text="1 caregiver" />
-              <Check text="Unlimited children" />
-              <Check text="Priority updates & exports" />
+              <Check text="Budget, Childcare and Annual Leave Planner" />
+              <Check text="Local exports" />
             </ul>
           </div>
-          <div className="pricing-card p-4">
-            <div className="pricing-head">
-              <span className="pill pill-green">Family</span>
-              <div className="price">£8.99/mo</div>
+
+          {/* Family */}
+          <div className="rounded-xl border p-4 bg-white">
+            <div className="flex items-center justify-between">
+              <span className="pill pill-sky">Family</span>
+              <Users className="h-5 w-5 opacity-60" />
             </div>
-            <ul className="text-sm space-y-2">
-              <Check text="2 parents" />
-              <Check text="Up to 6 caregivers" />
-              <Check text="Unlimited children" />
-              <Check text="Advanced rules + reminders" />
+            <div className="price mt-1">£8.99/mo</div>
+            <ul className="text-sm space-y-2 mt-3">
+              <Check text="Unlimited parents" />
+              <Check text="Unlimited caregivers" />
+              <Check text="All four planners" />
+              <Check text="Priority support & reminders" />
             </ul>
           </div>
         </div>
-      </section> */}
+      </section>
+
 
       {/* Footer */}
       <footer className="max-w-6xl mx-auto px-4 sm:px-6 py-10 text-sm opacity-70">
-        {/* <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>© {new Date().getFullYear()} hearthPlan</div>
           <div className="flex items-center gap-3">
-            <Link href="/app" className="hover:underline">Open app</Link>
-            <a className="hover:underline" href="mailto:hello@example.com">Contact</a>
+            <a className="hover:underline" href="mailto:robert@hearthplan.co.uk">Contact</a>
           </div>
-        </div> */}
+        </div>
       </footer>
     </main>
   );

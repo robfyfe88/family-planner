@@ -1,29 +1,34 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type TimeStr = `${number}:${number}`;
-type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri";
-type YearMode = "FULL_YEAR" | "TERM_TIME";
+import {
+  fetchNurseryPlanner,
+  setYearMode, setTermWeeks,
+  createChild, deleteChild,
+  updateChildBasics, updateChildRates, updateChildSessions,
+  setDayPlan, copyMondayToAll,
+  type YearMode, type DayKey,
+} from "../app/nursery/actions";
 
-interface Rates { am: number; pm: number; day: number; hourly: number; }
-interface Sessions {
-  amStart: TimeStr; amEnd: TimeStr;
-  pmStart: TimeStr; pmEnd: TimeStr;
-  fullDayHours: number; hourlyRoundingMinutes: number; sessionTriggerMinutes: number;
-}
-interface DayPlan { start?: TimeStr; end?: TimeStr; }
+
+type TimeStr = `${number}:${number}`;
+type DayPlan = { start?: TimeStr; end?: TimeStr };
 type WeekPlan = Record<DayKey, DayPlan>;
-interface ChildProfile {
+type Rates = { am: number; pm: number; day: number; hourly: number; };
+type Sessions = {
+  amStart: TimeStr; amEnd: TimeStr; pmStart: TimeStr; pmEnd: TimeStr;
+  fullDayHours: number; hourlyRoundingMinutes: number; sessionTriggerMinutes: number;
+};
+type ChildProfile = {
   id: string; name: string; ageYears: number; week: WeekPlan;
   tfcMonthlyCap: number; rates: Rates; sessions: Sessions;
-}
+};
 
 const dayKeys: DayKey[] = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const emptyWeek: WeekPlan = { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} };
 
 function parseTimeToMinutes(t?: TimeStr): number | null {
   if (!t) return null;
@@ -50,29 +55,10 @@ function roundUpMinutes(mins: number, increment: number): number {
 function gbp(n: number): string {
   return n.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
 }
-function uid() {
-  return (typeof crypto !== "undefined" && "randomUUID" in crypto)
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
-}
-
-function useNumberInputUX() {
-  return {
-    onFocus: (e: React.FocusEvent<HTMLInputElement>) => e.currentTarget.select(),
-    onMouseUp: (e: React.MouseEvent<HTMLInputElement>) => e.preventDefault(),
-    onWheel: (e: React.WheelEvent<HTMLInputElement>) => (e.target as HTMLInputElement).blur(),
-    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
-    },
-  };
-}
 
 function calcWeekForChild(
   week: WeekPlan, rates: Rates, sessions: Sessions
-): {
-  perDay: { day: DayKey; hours: number; pricingApplied: string; cost: number }[];
-  weeklyTotal: number; attendedMinutes: number;
-} {
+) {
   const amS = parseTimeToMinutes(sessions.amStart)!;
   const amE = parseTimeToMinutes(sessions.amEnd)!;
   const pmS = parseTimeToMinutes(sessions.pmStart)!;
@@ -155,157 +141,51 @@ function calcWeekForChild(
   return { perDay, weeklyTotal, attendedMinutes };
 }
 
-const NURSERY_STORE_KEY = "nurseryPlanner:v1";
-
-function safeNum(n: any, fallback = 0) {
-  const v = typeof n === "number" ? n : parseFloat(n ?? "0");
-  return Number.isFinite(v) ? v : fallback;
-}
-
-function reviveChild(
-  raw: Partial<ChildProfile>,
-  defaults: { rates: Rates; sessions: Sessions }
-): ChildProfile {
-  const weekRaw = (raw?.week ?? {}) as Partial<Record<DayKey, Partial<DayPlan>>>;
-  const week: WeekPlan = { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} };
-  for (const d of dayKeys) {
-    const r = weekRaw[d] ?? {};
-    week[d] = {
-      start: typeof r.start === "string" && /^\d{2}:\d{2}$/.test(r.start) ? (r.start as TimeStr) : undefined,
-      end:   typeof r.end   === "string" && /^\d{2}:\d{2}$/.test(r.end)   ? (r.end as TimeStr)   : undefined,
-    };
-  }
-
-  const ratesRaw = (raw?.rates ?? {}) as Partial<Rates>;
-  const rates: Rates = {
-    am:     safeNum(ratesRaw.am,     defaults.rates.am),
-    pm:     safeNum(ratesRaw.pm,     defaults.rates.pm),
-    day:    safeNum(ratesRaw.day,    defaults.rates.day),
-    hourly: safeNum(ratesRaw.hourly, defaults.rates.hourly),
-  };
-
-  const s = (raw?.sessions ?? {}) as Partial<Sessions>;
-  const sessions: Sessions = {
-    amStart: typeof s.amStart === "string" && /^\d{2}:\d{2}$/.test(s.amStart) ? (s.amStart as TimeStr) : defaults.sessions.amStart,
-    amEnd:   typeof s.amEnd   === "string" && /^\d{2}:\d{2}$/.test(s.amEnd)   ? (s.amEnd   as TimeStr) : defaults.sessions.amEnd,
-    pmStart: typeof s.pmStart === "string" && /^\d{2}:\d{2}$/.test(s.pmStart) ? (s.pmStart as TimeStr) : defaults.sessions.pmStart,
-    pmEnd:   typeof s.pmEnd   === "string" && /^\d{2}:\d{2}$/.test(s.pmEnd)   ? (s.pmEnd   as TimeStr) : defaults.sessions.pmEnd,
-    fullDayHours:          safeNum(s.fullDayHours,          defaults.sessions.fullDayHours),
-    hourlyRoundingMinutes: safeNum(s.hourlyRoundingMinutes, defaults.sessions.hourlyRoundingMinutes),
-    sessionTriggerMinutes: safeNum(s.sessionTriggerMinutes, defaults.sessions.sessionTriggerMinutes),
-  };
-
-  return {
-    id: typeof raw.id === "string" ? raw.id : uid(),
-    name: typeof raw.name === "string" ? raw.name : "Child 1",
-    ageYears: safeNum(raw.ageYears, 3),
-    tfcMonthlyCap: safeNum(raw.tfcMonthlyCap, 166.67),
-    week,
-    rates,
-    sessions,
-  };
-}
-
 export default function NurseryPlannerPage() {
-  const [yearMode, setYearMode] = useState<YearMode>("FULL_YEAR");
-  const [termWeeks, setTermWeeks] = useState<number>(38);
+  const [loading, setLoading] = React.useState(true);
+  const [yearMode, setMode] = React.useState<YearMode>("FULL_YEAR");
+  const [termWeeks, setWeeks] = React.useState<number>(38);
+  const [children, setChildren] = React.useState<ChildProfile[]>([]);
+  const [activeChildId, setActiveChildId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const defaultRates: Rates = { am: 28, pm: 28, day: 55, hourly: 7.5 };
-  const defaultSessions: Sessions = {
-    amStart: "08:00", amEnd: "12:30", pmStart: "13:00", pmEnd: "18:00",
-    fullDayHours: 8.5, hourlyRoundingMinutes: 15, sessionTriggerMinutes: 60,
+  const saveOrBackup = async <T,>(fn: () => Promise<T>, backup: () => void) => {
+    try {
+      return await fn();
+    } catch (e) {
+      console.warn("Primary save failed, writing backup to localStorage.", e);
+      backup();
+      setError("Connection issue. Changes saved locally; they’ll sync next time.");
+      return undefined as unknown as T;
+    }
   };
-
-  const [loaded, setLoaded] = useState(false);
-  const [children, setChildren] = useState<ChildProfile[]>([]);
-  const [activeChildId, setActiveChildId] = useState<string>("");
 
   React.useEffect(() => {
-    try {
-      const raw = localStorage.getItem(NURSERY_STORE_KEY);
-      const parsed = raw ? JSON.parse(raw) as {
-        v?: number; yearMode?: YearMode; termWeeks?: number;
-        activeChildId?: string; children?: Partial<ChildProfile>[];
-      } : null;
-
-      const restoredChildren =
-        (parsed?.children ?? []).map((c) =>
-          reviveChild(c, { rates: defaultRates, sessions: defaultSessions })
-        );
-
-      if (restoredChildren.length > 0) {
-        setChildren(restoredChildren);
-        setActiveChildId(
-          restoredChildren.some(c => c.id === parsed?.activeChildId)
-            ? (parsed!.activeChildId as string)
-            : restoredChildren[0].id
-        );
-      } else {
-        const firstId = uid();
-        setChildren([{
-          id: firstId,
-          name: "Child 1",
-          ageYears: 3,
-          week: structuredClone(emptyWeek),
-          tfcMonthlyCap: 166.67,
-          rates: { ...defaultRates },
-          sessions: { ...defaultSessions },
-        }]);
-        setActiveChildId(firstId);
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await fetchNurseryPlanner();
+        setMode(data.settings.yearMode);
+        setWeeks(data.settings.termWeeks);
+        setChildren(data.children);
+        setActiveChildId(data.activeChildId);
+      } catch (e: any) {
+        setError(e?.message ?? "Failed to load nursery planner.");
+      } finally {
+        setLoading(false);
       }
-
-      setYearMode(parsed?.yearMode === "TERM_TIME" ? "TERM_TIME" : "FULL_YEAR");
-      setTermWeeks(safeNum(parsed?.termWeeks, 38));
-    } catch (e) {
-      console.warn("Nursery restore failed:", e);
-    } finally {
-      setLoaded(true);
-    }
+    })();
   }, []);
 
-  React.useEffect(() => {
-    if (!loaded || children.length === 0) return;
-    if (!children.some(c => c.id === activeChildId)) {
-      setActiveChildId(children[0].id);
-    }
-  }, [loaded, children, activeChildId]);
-
-  const addChild = () => {
-    const id = uid();
-    setChildren(prev => [
-      ...prev,
-      {
-        id,
-        name: `Child ${prev.length + 1}`,
-        ageYears: 3,
-        week: structuredClone(emptyWeek),
-        tfcMonthlyCap: 166.67,
-        rates: { ...defaultRates },
-        sessions: { ...defaultSessions },
-      },
-    ]);
-    setActiveChildId(id);
-  };
-
-  const removeChild = (id: string) => {
-    setChildren(prev => {
-      const next = prev.filter(c => c.id !== id);
-      if (activeChildId === id) setActiveChildId(next[0]?.id ?? "");
-      return next;
-    });
-  };
-
-  const updateChild = (id: string, patch: Partial<ChildProfile>) =>
-    setChildren(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
-
-  const factors = useMemo(() => {
+  const activeChild = children.find((c) => c.id === activeChildId) ?? children[0] ?? null;
+  const factors = React.useMemo(() => {
     const weeksPerYear = yearMode === "FULL_YEAR" ? 51 : termWeeks;
     const monthlyDivisor = yearMode === "TERM_TIME" ? 11 : 12;
     const monthlyFactor = weeksPerYear / monthlyDivisor;
     return { weeksPerYear, monthlyDivisor, monthlyFactor };
   }, [yearMode, termWeeks]);
 
-  const results = useMemo(() => {
+  const results = React.useMemo(() => {
     const perChild = children.map((child) => {
       const weekCalc = calcWeekForChild(child.week, child.rates, child.sessions);
       const fundedHoursPerWeek = child.ageYears >= 3 ? (yearMode === "FULL_YEAR" ? 22.8 : 30) : 0;
@@ -348,25 +228,71 @@ export default function NurseryPlannerPage() {
     return { perChild, familyMonthlyInvoice, familyTfcTopUp, familyParentNet };
   }, [children, factors, yearMode]);
 
-  const activeChild = children.find((c) => c.id === activeChildId) ?? children[0];
-  const activeCalc =
-    results.perChild.find((c) => c.id === activeChildId) ??
-    (activeChild ? results.perChild.find((c) => c.id === activeChild.id) : undefined);
+  const changeYearMode = async (mode: YearMode) => {
+    const prev = yearMode;
+    setMode(mode);
+    await saveOrBackup(() => setYearMode(mode), () => localStorage.setItem("nursery:yearMode", mode));
+  };
+  const changeTermWeeks = async (v: number) => {
+    const prev = termWeeks; setWeeks(v);
+    await saveOrBackup(() => setTermWeeks(v), () => localStorage.setItem("nursery:termWeeks", String(v)));
+  };
 
-  React.useEffect(() => {
-    if (!loaded) return;
-    const id = window.setTimeout(() => {
-      try {
-        const payload = { v: 1, yearMode, termWeeks, activeChildId, children };
-        localStorage.setItem(NURSERY_STORE_KEY, JSON.stringify(payload));
-      } catch (e) {
-        console.warn("Nursery persist failed:", e);
-      }
-    }, 120);
-    return () => window.clearTimeout(id);
-  }, [loaded, yearMode, termWeeks, activeChildId, children]);
+  const addChild = async () => {
+    const id = await saveOrBackup(() => createChild("Child"), () => { });
+    if (!id) return;
+    setChildren((prev) => [
+      ...prev,
+      {
+        id,
+        name: "Child",
+        ageYears: 3,
+        tfcMonthlyCap: 166.67,
+        rates: { am: 28, pm: 28, day: 55, hourly: 7.5 },
+        sessions: {
+          amStart: "08:00", amEnd: "12:30", pmStart: "13:00", pmEnd: "18:00",
+          fullDayHours: 8.5, hourlyRoundingMinutes: 15, sessionTriggerMinutes: 60,
+        },
+        week: { Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {} },
+      },
+    ]);
+    setActiveChildId(id);
+  };
 
-  if (!loaded) {
+  const removeChild = async (id: string) => {
+    const prev = children;
+    setChildren((c) => c.filter((x) => x.id !== id));
+    if (activeChildId === id) setActiveChildId(children[0]?.id ?? null);
+    await saveOrBackup(() => deleteChild(id), () => localStorage.setItem("nursery:deleteChild", id));
+  };
+
+  const updateBasics = async (id: string, patch: Partial<Pick<ChildProfile, "name" | "ageYears" | "tfcMonthlyCap">>) => {
+    const prev = children;
+    setChildren((c) => c.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    await saveOrBackup(() => updateChildBasics(id, patch), () => { });
+  };
+  const updateRates = async (id: string, patch: Partial<Rates>) => {
+    setChildren((c) => c.map((x) => (x.id === id ? { ...x, rates: { ...x.rates, ...patch } } : x)));
+    await saveOrBackup(() => updateChildRates(id, patch), () => { });
+  };
+  const updateSessionsUI = async (id: string, patch: Partial<Sessions>) => {
+    setChildren((c) => c.map((x) => (x.id === id ? { ...x, sessions: { ...x.sessions, ...patch } } : x)));
+    await saveOrBackup(() => updateChildSessions(id, patch), () => { });
+  };
+  const setDay = async (id: string, day: DayKey, plan: DayPlan) => {
+    setChildren((c) => c.map((x) => (x.id === id ? { ...x, week: { ...x.week, [day]: { ...plan } } } : x)));
+    await saveOrBackup(() => setDayPlan(id, day, plan), () => { });
+  };
+  const copyMon = async (id: string) => {
+    const mon = children.find((c) => c.id === id)?.week.Mon ?? {};
+    setChildren((cs) => cs.map((c) => c.id === id ? ({
+      ...c,
+      week: { Mon: { ...mon }, Tue: { ...mon }, Wed: { ...mon }, Thu: { ...mon }, Fri: { ...mon } }
+    }) : c));
+    await saveOrBackup(() => copyMondayToAll(id), () => { });
+  };
+
+  if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-4">
         <div className="h-6 w-48 bg-gray-100 rounded" />
@@ -381,11 +307,11 @@ export default function NurseryPlannerPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold">Nursery Cost Planner</h1>
           <p className="text-xs sm:text-sm opacity-80 pt-4">
-            Per-child rates & sessions, accurate funding, and monthly totals — switch between Full Year and Term Time.
+            Per-child rates & sessions, accurate funding, and monthly totals — stored in your account.
           </p>
         </div>
 
-        <YearModeToggle yearMode={yearMode} setYearMode={setYearMode} />
+        <YearModeToggle yearMode={yearMode} setYearMode={changeYearMode} />
       </header>
 
       {yearMode === "TERM_TIME" && (
@@ -394,11 +320,15 @@ export default function NurseryPlannerPage() {
             label="Term weeks per year"
             value={termWeeks}
             step={1}
-            onChange={setTermWeeks}
+            onChange={changeTermWeeks}
             hint="Typical Scotland: ~38 weeks"
           />
           <span className="badge badge-yellow self-start sm:self-auto text-center">Term time</span>
         </div>
+      )}
+
+      {error && (
+        <div className="rounded-xl border bg-red-50 text-red-800 px-3 py-2 text-sm">{error}</div>
       )}
 
       <section className="lgcard">
@@ -426,7 +356,7 @@ export default function NurseryPlannerPage() {
           </Button>
         </div>
 
-        {children.length > 0 && activeChild ? (
+        {activeChild ? (
           <div className="space-y-6 pt-4">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex flex-wrap items-end gap-3">
@@ -435,7 +365,7 @@ export default function NurseryPlannerPage() {
                   <Input
                     className="w-full sm:w-56"
                     value={activeChild.name}
-                    onChange={(e) => updateChild(activeChild.id, { name: e.target.value })}
+                    onChange={(e) => updateBasics(activeChild.id, { name: e.target.value })}
                     placeholder="Child name"
                   />
                 </div>
@@ -444,14 +374,14 @@ export default function NurseryPlannerPage() {
                   label="Age (years)"
                   value={activeChild.ageYears}
                   step={1}
-                  onChange={(v) => updateChild(activeChild.id, { ageYears: v })}
+                  onChange={(v) => updateBasics(activeChild.id, { ageYears: v })}
                   hint="Funding at 3+"
                 />
                 <NumberField
                   label="TFC cap (£/mo)"
                   value={activeChild.tfcMonthlyCap}
                   step={0.01}
-                  onChange={(v) => updateChild(activeChild.id, { tfcMonthlyCap: v })}
+                  onChange={(v) => updateBasics(activeChild.id, { tfcMonthlyCap: v })}
                 />
               </div>
 
@@ -475,29 +405,37 @@ export default function NurseryPlannerPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
                 <NumberField
                   label="AM rate (£)"
+                  step={0.01}
+                  decimals={2}
                   value={activeChild.rates.am}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, am: v } })}
+                  onChange={(v) => updateRates(activeChild.id, { am: v })}
                 />
                 <NumberField
                   label="PM rate (£)"
+                  step={0.01}
+                  decimals={2}
                   value={activeChild.rates.pm}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, pm: v } })}
+                  onChange={(v) => updateRates(activeChild.id, { pm: v })}
                 />
                 <NumberField
                   label="Day rate (£)"
+                  step={0.01}
+                  decimals={2}
                   value={activeChild.rates.day}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, day: v } })}
+                  onChange={(v) => updateRates(activeChild.id, { day: v })}
                 />
                 <NumberField
                   label="Hourly rate (£)"
+                  step={0.01}
+                  decimals={2}
                   value={activeChild.rates.hourly}
-                  onChange={(v) => updateChild(activeChild.id, { rates: { ...activeChild.rates, hourly: v } })}
+                  onChange={(v) => updateRates(activeChild.id, { hourly: v })}
                 />
                 <NumberField
                   label="Full-day threshold (hrs)"
                   step={0.25}
                   value={activeChild.sessions.fullDayHours}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, fullDayHours: v } })}
+                  onChange={(v) => updateSessionsUI(activeChild.id, { fullDayHours: v })}
                 />
               </div>
             </section>
@@ -511,34 +449,34 @@ export default function NurseryPlannerPage() {
                 <TimeField
                   label="AM start"
                   value={activeChild.sessions.amStart}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amStart: v } })}
+                  onChange={(v) => updateSessionsUI(activeChild.id, { amStart: v })}
                 />
                 <TimeField
                   label="AM end"
                   value={activeChild.sessions.amEnd}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, amEnd: v } })}
+                  onChange={(v) => updateSessionsUI(activeChild.id, { amEnd: v })}
                 />
                 <TimeField
                   label="PM start"
                   value={activeChild.sessions.pmStart}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmStart: v } })}
+                  onChange={(v) => updateSessionsUI(activeChild.id, { pmStart: v })}
                 />
                 <TimeField
                   label="PM end"
                   value={activeChild.sessions.pmEnd}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, pmEnd: v } })}
+                  onChange={(v) => updateSessionsUI(activeChild.id, { pmEnd: v })}
                 />
                 <NumberField
                   label="Hourly rounding (mins)"
                   step={1}
                   value={activeChild.sessions.hourlyRoundingMinutes}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, hourlyRoundingMinutes: v } })}
+                  onChange={(v) => updateSessionsUI(activeChild.id, { hourlyRoundingMinutes: v })}
                 />
                 <NumberField
                   label="Session trigger (mins)"
                   step={5}
                   value={activeChild.sessions.sessionTriggerMinutes}
-                  onChange={(v) => updateChild(activeChild.id, { sessions: { ...activeChild.sessions, sessionTriggerMinutes: v } })}
+                  onChange={(v) => updateSessionsUI(activeChild.id, { sessionTriggerMinutes: v })}
                   hint="Min overlap to count a session"
                 />
                 <div className="self-end text-xs sm:text-sm opacity-70">Hourly is rounded up.</div>
@@ -551,15 +489,9 @@ export default function NurseryPlannerPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const mon = activeChild.week.Mon;
-                    if (!mon?.start || !mon?.end) return;
-                    updateChild(activeChild.id, {
-                      week: { Mon: { ...mon }, Tue: { ...mon }, Wed: { ...mon }, Thu: { ...mon }, Fri: { ...mon } },
-                    });
-                  }}
+                  onClick={() => copyMon(activeChild.id)}
                 >
-                  Copy to all
+                  Copy Monday to all
                 </Button>
               </div>
 
@@ -570,22 +502,18 @@ export default function NurseryPlannerPage() {
                     <TimeField
                       label="Start"
                       value={activeChild.week[d].start || ""}
-                      onChange={(v) =>
-                        updateChild(activeChild.id, { week: { ...activeChild.week, [d]: { ...activeChild.week[d], start: v } } })
-                      }
+                      onChange={(v) => setDay(activeChild.id, d, { ...activeChild.week[d], start: v })}
                     />
                     <TimeField
                       label="End"
                       value={activeChild.week[d].end || ""}
-                      onChange={(v) =>
-                        updateChild(activeChild.id, { week: { ...activeChild.week, [d]: { ...activeChild.week[d], end: v } } })
-                      }
+                      onChange={(v) => setDay(activeChild.id, d, { ...activeChild.week[d], end: v })}
                     />
                     <Button
                       variant="ghost"
                       size="sm"
                       className="px-0 text-red-600 w-fit p-2"
-                      onClick={() => updateChild(activeChild.id, { week: { ...activeChild.week, [d]: {} } })}
+                      onClick={() => setDay(activeChild.id, d, {})}
                     >
                       Clear
                     </Button>
@@ -594,53 +522,57 @@ export default function NurseryPlannerPage() {
               </div>
             </section>
 
-            {activeCalc && (
-              <section className="card">
-                <div className="overflow-auto">
-                  <table className="w-full text-xs sm:text-sm">
-                    <thead>
-                      <tr>
-                        <th className="w-[50px]">Day</th>
-                        <th className="text-right w-[50px]">Hours</th>
-                        <th className="w-[50px]">Pricing</th>
-                        <th className="text-right w-[50px]">Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeCalc.perDay.map((r) => (
-                        <tr key={r.day}>
-                          <td>{r.day}</td>
-                          <td className="text-right">{r.hours.toFixed(2)}</td>
-                          <td>{r.pricingApplied ?? "—"}</td>
-                          <td className="text-right">{gbp(r.cost ?? 0)}</td>
+            {activeChild && (() => {
+              const calc = results.perChild.find(p => p.id === activeChild.id);
+              if (!calc) return null;
+              return (
+                <section className="card">
+                  <div className="overflow-auto">
+                    <table className="w-full text-xs sm:text-sm">
+                      <thead>
+                        <tr>
+                          <th className="w-[50px]">Day</th>
+                          <th className="text-right w-[50px]">Hours</th>
+                          <th className="w-[50px]">Pricing</th>
+                          <th className="text-right w-[50px]">Cost</th>
                         </tr>
-                      ))}
-                      <tr>
-                        <td colSpan={3} className="font-semibold">Weekly total (before funding)</td>
-                        <td className="text-right font-semibold">{gbp(activeCalc.weeklyTotalBeforeFunding)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {calc.perDay.map((r) => (
+                          <tr key={r.day}>
+                            <td>{r.day}</td>
+                            <td className="text-right">{r.hours.toFixed(2)}</td>
+                            <td>{r.pricingApplied ?? "—"}</td>
+                            <td className="text-right">{gbp(r.cost ?? 0)}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td colSpan={3} className="font-semibold">Weekly total (before funding)</td>
+                          <td className="text-right font-semibold">{gbp(calc.weeklyTotalBeforeFunding)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
 
-                <div className="grid sm:grid-cols-4 gap-4 pt-3">
-                  <Stat label="Attended hours (weekly)" value={`${activeCalc.attendedHours.toFixed(2)} h`} />
-                  <Stat label="Funded hours (weekly)" value={`${activeCalc.fundedHoursPerWeek} h`} />
-                  <Stat label="Funding credit (weekly)" value={`- ${gbp(activeCalc.weeklyFundingCredit)}`} />
-                  <Stat
-                    label={`Estimated monthly (${yearMode === "FULL_YEAR" ? "51 w/yr ÷ 12" : `${termWeeks} w/yr ÷ 11`})`}
-                    value={gbp(activeCalc.monthlyInvoice)}
-                  />
-                </div>
-                <div className="grid sm:grid-cols-2 gap-4 pt-2">
-                  <Stat label="TFC top-up (20%, capped)" value={`- ${gbp(activeCalc.tfcTopUp)}`} />
-                  <Stat label="Parent net monthly" value={gbp(activeCalc.parentNet)} />
-                </div>
-                <p className="text-xs opacity-70 mt-2">
-                  Funding rule: {activeChild.ageYears >= 3 ? (yearMode === "FULL_YEAR" ? "22.8 hrs/week (stretched)" : "30 hrs/week (term time)") : "0 hrs/week (under 3)"}.
-                </p>
-              </section>
-            )}
+                  <div className="grid sm:grid-cols-4 gap-4 pt-3">
+                    <Stat label="Attended hours (weekly)" value={`${calc.attendedHours.toFixed(2)} h`} />
+                    <Stat label="Funded hours (weekly)" value={`${calc.fundedHoursPerWeek} h`} />
+                    <Stat label="Funding credit (weekly)" value={`- ${gbp(calc.weeklyFundingCredit)}`} />
+                    <Stat
+                      label={`Estimated monthly (${yearMode === "FULL_YEAR" ? "51 w/yr ÷ 12" : `${termWeeks} w/yr ÷ 11`})`}
+                      value={gbp(calc.monthlyInvoice)}
+                    />
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4 pt-2">
+                    <Stat label="TFC top-up (20%, capped)" value={`- ${gbp(calc.tfcTopUp)}`} />
+                    <Stat label="Parent net monthly" value={gbp(calc.parentNet)} />
+                  </div>
+                  <p className="text-xs opacity-70 mt-2">
+                    Funding rule: {activeChild.ageYears >= 3 ? (yearMode === "FULL_YEAR" ? "22.8 hrs/week (stretched)" : "30 hrs/week (term time)") : "0 hrs/week (under 3)"}.
+                  </p>
+                </section>
+              );
+            })()}
           </div>
         ) : (
           <div className="pt-4 text-sm opacity-75">Add a child to get started.</div>
@@ -655,7 +587,7 @@ export default function NurseryPlannerPage() {
           <Stat label="Combined parent net monthly" value={gbp(results.familyParentNet)} />
         </div>
         <p className="text-xs opacity-70 mt-3">
-          Monthly = weekly (after funding) × ({yearMode === "FULL_YEAR" ? "50 ÷ 12" : `${termWeeks} ÷ 11`}). TFC applies after funding.
+          Monthly = weekly (after funding) × ({yearMode === "FULL_YEAR" ? "51 ÷ 12" : `${termWeeks} ÷ 11`}). TFC applies after funding.
         </p>
       </section>
     </div>
@@ -663,22 +595,69 @@ export default function NurseryPlannerPage() {
 }
 
 function NumberField({
-  label, value, onChange, step = 0.5, hint,
-}: { label: string; value: number; onChange: (v: number) => void; step?: number; hint?: string; }) {
-  const numUX = useNumberInputUX();
+  label,
+  value,
+  onChange,
+  step = 0.5,
+  hint,
+  decimals,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+  hint?: string;
+  decimals?: number;
+}) {
+  const [draft, setDraft] = React.useState<string>(String(value ?? ""));
+  React.useEffect(() => {
+    setDraft(String(value ?? ""));
+  }, [value]);
+
+  const DECIMAL_RE = /^-?\d*(?:[.,]\d*)?$/;
+
+  const commit = () => {
+    const norm = draft.replace(",", ".");
+    const num =
+      norm === "" || norm === "-" || norm === "." ? NaN : Number(norm);
+    if (!Number.isNaN(num)) {
+      onChange(
+        typeof decimals === "number" ? Number(num.toFixed(decimals)) : num
+      );
+      setDraft(
+        typeof decimals === "number" ? num.toFixed(decimals) : String(num)
+      );
+    } else {
+      setDraft(
+        typeof decimals === "number"
+          ? Number(value ?? 0).toFixed(decimals)
+          : String(value ?? "")
+      );
+    }
+  };
+
   return (
     <div className="flex flex-col gap-1 w-full">
       <Label className="text-xs sm:text-sm">{label}</Label>
       <Input
         type="text"
-        inputMode="text"
-        step={step}
-        value={Number.isFinite(value) ? value : 0}
-        onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
-        className="no-spinners"
-        {...numUX}
+        inputMode="decimal"
+        value={draft}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (DECIMAL_RE.test(v)) setDraft(v);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          }
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+        }}
       />
-      {hint ? <span className="text-[11px] sm:text-xs opacity-70">{hint}</span> : null}
+      {hint ? (
+        <span className="text-[11px] sm:text-xs opacity-70">{hint}</span>
+      ) : null}
     </div>
   );
 }

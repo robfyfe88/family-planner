@@ -9,16 +9,16 @@ datasource db {
 }
 
 model Household {
-  id                String              @id @default(cuid())
-  name              String
+  id                   String             @id @default(cuid())
+  name                 String
   // NEW
-  subscriptionTier   SubscriptionTier    @default(free)
-  subscriptionStatus SubscriptionStatus  @default(active)
+  subscriptionTier     SubscriptionTier   @default(free)
+  subscriptionStatus   SubscriptionStatus @default(active)
   // Optional billing fields (handy later)
-  billingProvider    String?             // "stripe"
-  stripeCustomerId   String?
+  billingProvider      String? // "stripe"
+  stripeCustomerId     String?
   stripeSubscriptionId String?
-  currentPeriodEnd   DateTime?
+  currentPeriodEnd     DateTime?
 
   members           Member[]
   activities        Activity[]
@@ -39,26 +39,30 @@ model Household {
 
   budgetLines         BudgetLine[]         @relation("HouseholdBudgetLines")
   budgetLineOverrides BudgetLineOverride[] @relation("HouseholdBudgetLineOverrides")
+
+  nurserySettings NurserySettings?
+  nurseryChildren NurseryChild[]
 }
 
 model Member {
-  id           String     @id @default(cuid())
-  householdId  String
-  name         String
-  role         MemberRole
-  shortLabel   String?
-  color        String?
-  slot         String?
-  userId       String?    @unique
-  inviteEmail  String?
-  household    Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  id          String     @id @default(cuid())
+  householdId String
+  name        String
+  role        MemberRole
+  shortLabel  String?
+  color       String?
+  slot        String?
+  userId      String?    @unique
+  inviteEmail String?
+  household   Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
   @@index([householdId])
   @@index([inviteEmail])
 }
 
 enum MemberRole {
   parent
-  caregiver   
+  caregiver
   child
 }
 
@@ -74,6 +78,60 @@ enum SubscriptionStatus {
   trialing
   past_due
   canceled
+}
+
+enum YearMode {
+  FULL_YEAR
+  TERM_TIME
+}
+
+model NurserySettings {
+  householdId String   @id
+  yearMode    YearMode @default(FULL_YEAR)
+  termWeeks   Int      @default(38)
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+model NurseryChild {
+  id                 String @id @default(cuid())
+  householdId        String
+  name               String
+  ageYears           Int    @default(3)
+  // money (pence)
+  tfcMonthlyCapPence Int    @default(16667) // £166.67 default
+  amRatePence        Int    @default(2800) // £28.00
+  pmRatePence        Int    @default(2800) // £28.00
+  dayRatePence       Int    @default(5500) // £55.00
+  hourlyRatePence    Int    @default(750) // £7.50
+
+  // sessions config
+  amStart               String @default("08:00")
+  amEnd                 String @default("12:30")
+  pmStart               String @default("13:00")
+  pmEnd                 String @default("18:00")
+  fullDayHours          Float  @default(8.5)
+  hourlyRoundingMinutes Int    @default(15)
+  sessionTriggerMinutes Int    @default(60)
+
+  weekPlans NurseryDayPlan[]
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+}
+
+model NurseryDayPlan {
+  id        String  @id @default(cuid())
+  childId   String
+  // 1..5 => Mon..Fri
+  weekday   Int
+  startTime String?
+  endTime   String?
+
+  child NurseryChild @relation(fields: [childId], references: [id], onDelete: Cascade)
+
+  @@unique([childId, weekday])
 }
 
 model Activity {
