@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import * as React from "react";
+import { useMemo, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -12,267 +13,75 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BrushCleaning, CalendarCog, Settings } from "lucide-react";
 
-type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+import {
+  updateAnnualSettings,
+  upsertParentPrefs,
+  toggleClosure as toggleClosureAction,
+  setOverride as setOverrideAction,
+  autoPlanAndSave,
+  clearAutoPlan,
+} from "../app/annual/actions";
 
-interface ParentConfig {
-  name: string;
-  shortLabel: string;
-  offDays: Weekday[];
-  allowance: number;
-  getsBankHolidays: boolean;
-}
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type Region = "england-and-wales" | "scotland" | "northern-ireland";
+export type OverrideCode = "A" | "B" | "both" | `C:${string}` | "clear";
 
-interface Caregiver {
-  id: string;
-  name: string;
-  shortLabel: string;
-  color: string;
-}
-
-type Region = "england-and-wales" | "scotland" | "northern-ireland";
-type OverrideCode = "A" | "B" | "both" | `C:${string}` | "clear";
-
-interface PlanInput {
-  parentA: ParentConfig;
-  parentB?: ParentConfig | null;
-  schoolClosedDates: string[];
-  jointDays: number;
-  skipWeekends: boolean;
-  overrides?: Record<string, OverrideCode>;
-  bankHolidaySet: Set<string>;
-  prioritizeSeasons?: boolean;
-}
-
-type Coverage =
+type CoverageDTO =
   | { type: "none" }
   | { type: "off"; who: "A" | "B" | "both" }
   | { type: "leave"; who: "A" | "B" | "both" }
   | { type: "care"; caregiverId: string };
 
-interface DayPlan {
-  date: string;
-  weekday: string;
-  coverage: Coverage;
-}
+type DayPlanDTO = { date: string; weekday: string; coverage: CoverageDTO };
+
+type ParentConfigDTO = {
+  memberId: string;
+  name: string;
+  shortLabel: string | null;
+  color: string | null;
+  offDays: Weekday[];
+  allowance: number;
+  getsBankHolidays: boolean;
+};
+
+type CaregiverDTO = {
+  id: string;
+  name: string;
+  shortLabel: string | null;
+  color: string | null;
+};
+
+type AnnualData = {
+  settings: { region: Region; skipWeekends: boolean; jointDays: number; prioritizeSeasons: boolean };
+  parents: ParentConfigDTO[]; 
+  caregivers: CaregiverDTO[];
+  closures: string[];      
+  plan: DayPlanDTO[];      
+};
 
 const weekdayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const palette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6D4", "#84CC16"];
 
-function parseDate(s: string): Date | null {
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
 function ymd(d: Date): string {
   const tz = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   return tz.toISOString().slice(0, 10);
 }
-function addDays(d: Date, n: number): Date {
-  const nd = new Date(d);
-  nd.setDate(nd.getDate() + n);
-  return nd;
-}
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-function endOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
-}
-function sameMonth(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
-}
-function isWeekend(d: Date) {
-  const g = d.getDay();
-  return g === 0 || g === 6;
-}
-function groupConsecutive(dates: Date[]): Date[][] {
-  const res: Date[][] = [];
-  const s = [...dates].sort((a, b) => a.getTime() - b.getTime());
-  let cur: Date[] = [];
-  for (let i = 0; i < s.length; i++) {
-    if (i === 0) cur = [s[i]];
-    else {
-      const prev = s[i - 1];
-      const diff = Math.round((s[i].getTime() - prev.getTime()) / 86400000);
-      if (diff === 1) cur.push(s[i]); else { res.push(cur); cur = [s[i]]; }
-    }
-  }
-  if (cur.length) res.push(cur);
-  return res;
-}
-function windowContains(date: Date, start: Date, end: Date) {
-  return date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
-}
-function getSeasonWindows(forYears: number[]) {
-  const win: { name: "christmas" | "summer"; start: Date; end: Date }[] = [];
-  for (const y of forYears) {
-    win.push({ name: "summer", start: new Date(y, 5, 20), end: new Date(y, 8, 1) });
-    win.push({ name: "christmas", start: new Date(y, 11, 15), end: new Date(y + 1, 0, 7) });
-  }
-  return win;
-}
-
-const uid = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-const palette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6D4", "#84CC16"];
-
+function parseISO(iso: string) { return new Date(`${iso}T00:00:00.000Z`); }
+function addDays(d: Date, n: number) { const nd = new Date(d); nd.setDate(nd.getDate() + n); return nd; }
+function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+function sameMonth(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth(); }
+function isWeekend(d: Date) { const g = d.getDay(); return g === 0 || g === 6; }
 function buildMonthMatrix(monthAnchor: Date) {
   const first = startOfMonth(monthAnchor);
-  const gridStart = addDays(first, -first.getDay()); 
-  const cells: Date[] = [];
-  for (let i = 0; i < 42; i++) cells.push(addDays(gridStart, i));
+  const gridStart = addDays(first, -first.getDay());
+  const cells: Date[] = []; for (let i = 0; i < 42; i++) cells.push(addDays(gridStart, i));
   return { cells };
 }
-
 function buildMonthDays(monthAnchor: Date) {
-  const first = startOfMonth(monthAnchor);
-  const last = endOfMonth(monthAnchor);
-  const days: Date[] = [];
-  for (let d = new Date(first); d.getTime() <= last.getTime(); d = addDays(d, 1)) {
-    days.push(new Date(d));
-  }
+  const first = startOfMonth(monthAnchor); const last = endOfMonth(monthAnchor);
+  const days: Date[] = []; for (let d = new Date(first); d.getTime() <= last.getTime(); d = addDays(d, 1)) days.push(new Date(d));
   return days;
-}
-
-const STORE_KEY = "annualLeavePlanner:v3";
-
-function useLocalStorageState<T>(key: string, initialValue: T) {
-  const [value, setValue] = React.useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? (JSON.parse(raw) as T) : initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
-  React.useEffect(() => {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch { }
-  }, [key, value]);
-  return [value, setValue] as const;
-}
-
-function planAnnualLeave(input: PlanInput) {
-  const A: ParentConfig = { ...input.parentA };
-  const B: ParentConfig | null = input.parentB ? { ...input.parentB } : null;
-
-  const overrides = input.overrides ?? {};
-  const offSetA = new Set<Weekday>(A.offDays);
-  const offSetB = new Set<Weekday>(B?.offDays ?? []);
-  const hasB = !!B;
-
-  const dates = input.schoolClosedDates
-    .map(parseDate)
-    .filter((d): d is Date => !!d)
-    .filter((d) => (input.skipWeekends ? !isWeekend(d) : true))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const plan: DayPlan[] = dates.map((d) => {
-    const w = d.getDay() as Weekday;
-    const isBH = input.bankHolidaySet.has(ymd(d));
-
-    const aOff = offSetA.has(w) || (isBH && A.getsBankHolidays);
-    const bOff = hasB ? offSetB.has(w) || (isBH && (B as ParentConfig).getsBankHolidays) : false;
-
-    let coverage: Coverage =
-      aOff && bOff ? { type: "off", who: "both" }
-        : aOff ? { type: "off", who: "A" }
-          : bOff ? { type: "off", who: "B" }
-            : { type: "none" };
-
-    return { date: ymd(d), weekday: weekdayName[w], coverage };
-  });
-
-  for (const p of plan) {
-    const ov = overrides[p.date];
-    if (!ov || p.coverage.type === "off") continue;
-
-    if (ov === "both" && hasB && A.allowance > 0 && (B as ParentConfig).allowance > 0) {
-      p.coverage = { type: "leave", who: "both" };
-      A.allowance--; (B as ParentConfig).allowance--;
-    } else if (ov === "A" && A.allowance > 0) {
-      p.coverage = { type: "leave", who: "A" };
-      A.allowance--;
-    } else if (ov === "B" && hasB && (B as ParentConfig).allowance > 0) {
-      p.coverage = { type: "leave", who: "B" };
-      (B as ParentConfig).allowance--;
-    } else if (ov?.startsWith("C:")) {
-      p.coverage = { type: "care", caregiverId: ov.slice(2) };
-    }
-  }
-
-  const years = Array.from(new Set(dates.map((d) => d.getFullYear())));
-  const seasonWindows = input.prioritizeSeasons ? getSeasonWindows(years) : [];
-  const isUncovered = (p: DayPlan) => p.coverage.type === "none";
-
-  const makeBlocks = () => {
-    const uncoveredDates = plan.filter(isUncovered).map((p) => parseDate(p.date)!);
-    return groupConsecutive(uncoveredDates);
-  };
-  const assignBlockAll = (block: Date[], who: "A" | "B" | "both") => {
-    for (const d of block) {
-      const id = ymd(d);
-      const p = plan.find((x) => x.date === id)!;
-      if (p.coverage.type !== "none") continue;
-      p.coverage = who === "both" ? { type: "leave", who: "both" } : { type: "leave", who };
-    }
-  };
-  const blockLen = (b: Date[]) => b.length;
-  const withinSeason = (block: Date[], name: "christmas" | "summer") => {
-    const windows = seasonWindows.filter((w) => w.name === name);
-    return block.some((d) => windows.some((w) => windowContains(d, w.start, w.end)));
-  };
-
-  let jointRemaining = hasB ? input.jointDays : 0;
-  if (hasB && jointRemaining > 0) {
-    const trySeason = (season: "christmas" | "summer") => {
-      let blocks = makeBlocks().filter((b) => withinSeason(b, season)).sort((a, b) => a[0].getTime() - b[0].getTime());
-      for (const b of blocks) {
-        const L = blockLen(b);
-        if (L <= jointRemaining && A.allowance >= L && (B as ParentConfig).allowance >= L) {
-          assignBlockAll(b, "both");
-          A.allowance -= L; (B as ParentConfig).allowance -= L; jointRemaining -= L;
-        }
-        if (!jointRemaining) break;
-      }
-    };
-    trySeason("christmas"); if (jointRemaining) trySeason("summer");
-  }
-
-  let blocks = makeBlocks().sort((a, b) => a[0].getTime() - b[0].getTime());
-  for (const block of blocks) {
-    let L = blockLen(block);
-    if (L === 0) continue;
-
-    const canA = A.allowance >= L;
-    const canB = hasB ? (B as ParentConfig).allowance >= L : false;
-
-    if (canA && !canB) { assignBlockAll(block, "A"); A.allowance -= L; continue; }
-    if (!canA && canB) { assignBlockAll(block, "B"); (B as ParentConfig).allowance -= L; continue; }
-    if (canA && canB) {
-      if (A.allowance >= (B as ParentConfig).allowance) { assignBlockAll(block, "A"); A.allowance -= L; }
-      else { assignBlockAll(block, "B"); (B as ParentConfig).allowance -= L; }
-      continue;
-    }
-
-    if (A.allowance === 0 && (!hasB || (B as ParentConfig).allowance === 0)) continue;
-
-    const primary: "A" | "B" = !hasB ? "A" : A.allowance >= (B as ParentConfig).allowance ? "A" : "B";
-    const firstTake = primary === "A" ? Math.min(L, A.allowance) : Math.min(L, (B as ParentConfig).allowance);
-    if (firstTake > 0) { assignBlockAll(block.slice(0, firstTake), primary); primary === "A" ? (A.allowance -= firstTake) : ((B as ParentConfig).allowance -= firstTake); L -= firstTake; }
-    if (hasB && L > 0) {
-      const secondary: "A" | "B" = primary === "A" ? "B" : "A";
-      const secondTake = secondary === "A" ? Math.min(L, A.allowance) : Math.min(L, (B as ParentConfig).allowance);
-      if (secondTake > 0) { assignBlockAll(block.slice(firstTake, firstTake + secondTake), secondary); secondary === "A" ? (A.allowance -= secondTake) : ((B as ParentConfig).allowance -= secondTake); }
-    }
-  }
-
-  const usedA = plan.filter((p) => p.coverage.type === "leave" && (p.coverage.who === "A" || p.coverage.who === "both")).length;
-  const usedB = hasB ? plan.filter((p) => p.coverage.type === "leave" && (p.coverage.who === "B" || p.coverage.who === "both")).length : 0;
-
-  const remainingA = input.parentA.allowance - usedA;
-  const remainingB = hasB ? (input.parentB as ParentConfig).allowance - usedB : 0;
-  const stillUncovered = plan.filter((p) => p.coverage.type === "none").length;
-
-  return { plan, usedA, usedB, remainingA, remainingB, stillUncovered };
 }
 
 async function fetchBankHolidays(): Promise<{
@@ -291,39 +100,25 @@ async function fetchBankHolidays(): Promise<{
   };
 }
 
-export default function AnnualLeavePlanner() {
+export default function AnnualLeavePlanner({ initial }: { initial: AnnualData }) {
+  const [isPending, start] = useTransition();
 
-  const [hasSecondParent, setHasSecondParent] = useLocalStorageState<boolean>(`${STORE_KEY}:hasSecondParent`, false);
+  const [settings, setSettings] = React.useState(initial.settings);
+  const [parentA, setParentA] = React.useState<ParentConfigDTO | null>(initial.parents[0] ?? null);
+  const [parentB, setParentB] = React.useState<ParentConfigDTO | null>(initial.parents[1] ?? null);
+  const [caregivers] = React.useState<CaregiverDTO[]>(initial.caregivers); 
+  const [closures, setClosures] = React.useState<string[]>(initial.closures);
+  const [appliedPlan, setAppliedPlan] = React.useState<DayPlanDTO[] | null>(initial.plan ?? null);
 
-  const [parentA, setParentA] = useLocalStorageState<ParentConfig>(`${STORE_KEY}:parentA`, {
-    name: "Parent 1", shortLabel: "P1", offDays: [0], allowance: 20, getsBankHolidays: false,
-  });
-  const [parentB, setParentB] = useLocalStorageState<ParentConfig>(`${STORE_KEY}:parentB`, {
-    name: "Parent 2", shortLabel: "P2", offDays: [0], allowance: 20, getsBankHolidays: false,
-  });
-
-  const [caregivers, setCaregivers] = useLocalStorageState<Caregiver[]>(`${STORE_KEY}:caregivers`, []);
-  const [closures, setClosures] = useLocalStorageState<string[]>(`${STORE_KEY}:closures`, []);
-  const closureSet = useMemo(() => new Set(closures), [closures]);
-  const [overrides, setOverrides] = useLocalStorageState<Record<string, OverrideCode>>(`${STORE_KEY}:overrides`, {});
-  const [jointDays, setJointDays] = useLocalStorageState<number>(`${STORE_KEY}:jointDays`, 5);
-  const [skipWeekends, setSkipWeekends] = useLocalStorageState<boolean>(`${STORE_KEY}:skipWeekends`, true);
-  const [region, setRegion] = useLocalStorageState<Region>(`${STORE_KEY}:region`, "england-and-wales");
-
-  const [anchorISO, setAnchorISO] = useLocalStorageState<string>(`${STORE_KEY}:anchorISO`, new Date().toISOString());
-  const anchor = useMemo(() => new Date(anchorISO), [anchorISO]);
-  const setAnchor = (d: Date) => setAnchorISO(new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1)).toISOString());
-
-  const [appliedPlan, setAppliedPlan] = useLocalStorageState<DayPlan[] | null>(`${STORE_KEY}:appliedPlan`, null);
-
+  const [anchor, setAnchor] = React.useState(() => new Date());
   const { cells } = useMemo(() => buildMonthMatrix(anchor), [anchor]);
   const monthDays = useMemo(() => buildMonthDays(anchor), [anchor]);
-
   const planByDate = useMemo(() => {
-    const map = new Map<string, DayPlan>();
+    const map = new Map<string, DayPlanDTO>();
     if (appliedPlan) for (const p of appliedPlan) map.set(p.date, p);
     return map;
   }, [appliedPlan]);
+  const closureSet = useMemo(() => new Set(closures), [closures]);
 
   const [dragging, setDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState<string | null>(null);
@@ -335,21 +130,58 @@ export default function AnnualLeavePlanner() {
     scotland: Set<string>;
     "northern-ireland": Set<string>;
   }>({ "england-and-wales": new Set(), scotland: new Set(), "northern-ireland": new Set() });
-  const bankHolidaySet = useMemo(() => bhSets[region], [bhSets, region]);
+  const bankHolidaySet = useMemo(() => bhSets[settings.region], [bhSets, settings.region]);
+  React.useEffect(() => { (async () => { try { setBhSets(await fetchBankHolidays()); } catch {} })(); }, []);
 
-  useEffect(() => {
-    (async () => {
-      try { setBhSets(await fetchBankHolidays()); } catch (e) { console.warn("Failed to fetch bank holidays", e); }
-    })();
-  }, []);
+  const persistSettings = (patch: Partial<typeof settings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    start(async () => { await updateAnnualSettings(next); });
+  };
 
-  const toggleClosure = (d: Date) => {
-    const id = ymd(d);
-    setClosures((prev) => {
-      const set = new Set(prev);
-      set.has(id) ? set.delete(id) : set.add(id);
-      return Array.from(set).sort();
+  const persistParentPrefs = (which: "A" | "B", patch: Partial<Pick<ParentConfigDTO, "offDays" | "allowance" | "getsBankHolidays">>) => {
+    const current = which === "A" ? parentA : parentB;
+    if (!current) return;
+    const next = { ...current, ...patch };
+    if (which === "A") setParentA(next);
+    else setParentB(next);
+    start(async () => {
+      await upsertParentPrefs({
+        memberId: next.memberId,
+        offDays: next.offDays,
+        allowance: next.allowance,
+        getsBankHolidays: next.getsBankHolidays,
+      });
     });
+  };
+
+  const toggleClosure = (id: string) => {
+    const was = closureSet.has(id);
+    setClosures((prev) => {
+      const s = new Set(prev);
+      was ? s.delete(id) : s.add(id);
+      return Array.from(s).sort();
+    });
+    start(async () => { await toggleClosureAction(id, !was); });
+  };
+
+  const setOverride = (dateISO: string, code: OverrideCode) => {
+    if (code !== "clear" && !closureSet.has(dateISO)) {
+      setClosures((prev) => [...prev, dateISO].sort());
+      start(async () => { await toggleClosureAction(dateISO, true); }); 
+    }
+    start(async () => { await setOverrideAction(dateISO, code); });
+  };
+
+  const applyPlan = () => {
+    start(async () => {
+      const res = await autoPlanAndSave(); 
+      setAppliedPlan(res.plan);
+    });
+  };
+  const clearPlan = () => {
+    setAppliedPlan(null);
+    start(async () => { await clearAutoPlan(); });
   };
 
   const onPointerDownCell = (id: string, e: React.PointerEvent) => {
@@ -362,184 +194,145 @@ export default function AnnualLeavePlanner() {
   const onPointerEnterCell = (id: string) => { if (dragging) setDragEnd(id); };
   const commitDrag = () => {
     if (!dragging || !dragStart || !dragEnd) { setDragging(false); return; }
-    const start = parseDate(dragStart)!;
-    const end = parseDate(dragEnd)!;
-    const lo = start.getTime() <= end.getTime() ? start : end;
-    const hi = start.getTime() <= end.getTime() ? end : start;
+    const startD = parseISO(dragStart); const endD = parseISO(dragEnd);
+    const lo = startD.getTime() <= endD.getTime() ? startD : endD;
+    const hi = startD.getTime() <= endD.getTime() ? endD : startD;
 
     const ids: string[] = [];
     for (let d = new Date(lo); d.getTime() <= hi.getTime(); d = addDays(d, 1)) ids.push(ymd(d));
 
+    const before = new Set(closures);
     setClosures((prev) => {
-      const set = new Set(prev);
-      for (const id of ids) (dragIntentAdd ? set.add(id) : set.delete(id));
-      return Array.from(set).sort();
+      const s = new Set(prev);
+      for (const id of ids) (dragIntentAdd ? s.add(id) : s.delete(id));
+      return Array.from(s).sort();
     });
+
+    start(async () => {
+      const toFlip = ids.filter((id) => (dragIntentAdd ? !before.has(id) : before.has(id)));
+      await Promise.all(toFlip.map((id) => toggleClosureAction(id, dragIntentAdd)));
+    });
+
     setDragging(false); setDragStart(null); setDragEnd(null);
   };
-
-  const addCaregiver = () => {
-    const i = caregivers.length;
-    setCaregivers((prev) => [
-      ...prev,
-      { id: uid(), name: `Caregiver ${i + 1}`, shortLabel: `C${i + 1}`, color: palette[i % palette.length] },
-    ]);
-  };
-  const updateCaregiver = (id: string, patch: Partial<Caregiver>) =>
-    setCaregivers((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  const removeCaregiver = (id: string) => setCaregivers((prev) => prev.filter((c) => c.id !== id));
-
-  const setOverride = (date: string, code: OverrideCode) => {
-    setOverrides((o) => {
-      const n = { ...o };
-      if (code === "clear") delete n[date];
-      else n[date] = code;
-      return n;
-    });
-    if (code !== "clear") {
-      setClosures((prev) => (prev.includes(date) ? prev : [...prev, date].sort()));
-    }
-  };
-
-  const applyPlan = () => {
-    const res = planAnnualLeave({
-      parentA,
-      parentB: hasSecondParent ? parentB : null,
-      schoolClosedDates: closures,
-      jointDays,
-      skipWeekends,
-      overrides,
-      bankHolidaySet,
-      prioritizeSeasons: true,
-    });
-    setAppliedPlan(res.plan);
-  };
-  const clearPlan = () => setAppliedPlan(null);
-
-  useEffect(() => {
-    if (!appliedPlan) return;
-    const res = planAnnualLeave({
-      parentA,
-      parentB: hasSecondParent ? parentB : null,
-      schoolClosedDates: closures,
-      jointDays,
-      skipWeekends,
-      overrides,
-      bankHolidaySet,
-      prioritizeSeasons: true,
-    });
-    setAppliedPlan(res.plan);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parentA, parentB, hasSecondParent, closures, jointDays, skipWeekends, overrides, bankHolidaySet]);
-
-  const stats = useMemo(() => {
-    if (!appliedPlan) {
-      const closedOnWeekdays = closures
-        .map(parseDate)
-        .filter((d): d is Date => !!d)
-        .filter((d) => !skipWeekends || !isWeekend(d)).length;
-      return {
-        usedA: 0,
-        usedB: 0,
-        remainingA: parentA.allowance,
-        remainingB: hasSecondParent ? parentB.allowance : 0,
-        stillUncovered: closedOnWeekdays,
-      };
-    }
-    const usedA = appliedPlan.filter((p) => p.coverage.type === "leave" && (p.coverage.who === "A" || p.coverage.who === "both")).length;
-    const usedB = hasSecondParent ? appliedPlan.filter((p) => p.coverage.type === "leave" && (p.coverage.who === "B" || p.coverage.who === "both")).length : 0;
-    const stillUncovered = appliedPlan.filter((p) => p.coverage.type === "none").length;
-
-    return {
-      usedA,
-      usedB,
-      remainingA: Math.max(0, parentA.allowance - usedA),
-      remainingB: hasSecondParent ? Math.max(0, parentB.allowance - usedB) : 0,
-      stillUncovered,
-    };
-  }, [appliedPlan, closures, parentA.allowance, hasSecondParent, parentB.allowance, skipWeekends]);
 
   const isToday = (d: Date) => ymd(d) === ymd(new Date());
   const withinMonth = (d: Date) => sameMonth(d, anchor);
   const isInDragRange = (id: string) => {
     if (!dragging || !dragStart || !dragEnd) return false;
-    const s = parseDate(dragStart)!; const e = parseDate(dragEnd)!;
+    const s = parseISO(dragStart), e = parseISO(dragEnd);
     const lo = s.getTime() <= e.getTime() ? s : e; const hi = s.getTime() <= e.getTime() ? e : s;
-    const d = parseDate(id)!; return d.getTime() >= lo.getTime() && d.getTime() <= hi.getTime();
+    const d = parseISO(id); return d.getTime() >= lo.getTime() && d.getTime() <= hi.getTime();
   };
+
+  const stats = useMemo(() => {
+    if (!appliedPlan) {
+      const closedOnWeekdays = closures
+        .map(parseISO)
+        .filter((d) => !settings.skipWeekends || !isWeekend(d)).length;
+      return {
+        usedA: 0,
+        usedB: 0,
+        remainingA: parentA?.allowance ?? 0,
+        remainingB: parentB?.allowance ?? 0,
+        stillUncovered: closedOnWeekdays,
+      };
+    }
+    const usedA = appliedPlan.filter((p) => p.coverage.type === "leave" && (p.coverage.who === "A" || p.coverage.who === "both")).length;
+    const usedB = appliedPlan.filter((p) => p.coverage.type === "leave" && (p.coverage.who === "B" || p.coverage.who === "both")).length;
+    const stillUncovered = appliedPlan.filter((p) => p.coverage.type === "none").length;
+    return {
+      usedA,
+      usedB,
+      remainingA: Math.max(0, (parentA?.allowance ?? 0) - usedA),
+      remainingB: Math.max(0, (parentB?.allowance ?? 0) - usedB),
+      stillUncovered,
+    };
+  }, [appliedPlan, closures, settings.skipWeekends, parentA?.allowance, parentB?.allowance]);
 
   return (
     <div className="space-y-6">
       <h2 className="text-xl sm:text-2xl font-semibold">Annual Leave Planner</h2>
+
       <section className="card space-y-4">
         <div className="grid md:grid-cols-2 gap-6">
-          <ParentCard label="Parent A" cfg={parentA} color={palette[0]} onChange={setParentA} showBankToggle />
-          {hasSecondParent ? (
-            <div className="relative">
-              <ParentCard label="Parent B" cfg={parentB} color={palette[1]} onChange={setParentB} showBankToggle />
-              <div className="mt-2">
-                <Button variant="outline" className="text-red-600" onClick={() => setHasSecondParent(false)}>
-                  Remove second parent
-                </Button>
-              </div>
-            </div>
+          {parentA && (
+            <ParentCard
+              label="Parent A"
+              cfg={parentA}
+              color={palette[0]}
+              onChange={(patch) => persistParentPrefs("A", patch)}
+              showBankToggle
+            />
+          )}
+          {parentB ? (
+            <ParentCard
+              label="Parent B"
+              cfg={parentB}
+              color={palette[1]}
+              onChange={(patch) => persistParentPrefs("B", patch)}
+              showBankToggle
+            />
           ) : (
-            <div className="p-3 border rounded-2xl flex items-center justify-center">
-              <Button variant="outline" onClick={() => setHasSecondParent(true)}>+ Add second parent</Button>
+            <div className="p-3 border rounded-2xl flex items-center justify-center text-sm opacity-70">
+              Second parent not set (invite another parent from Members)
             </div>
           )}
         </div>
 
         <div className="space-y-2">
           <div className="text-sm font-medium">Additional caregivers (for overrides)</div>
-          <div className="text-xs opacity-70">Grandparents, aunties/uncles, etc. They don’t use leave but can cover days via overrides.</div>
-          <div className="flex flex-col gap-3">
-            {caregivers.map((c) => (
-              <div key={c.id} className="flex flex-wrap items-end gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs" style={{ backgroundColor: c.color }} title="Badge colour">
-                    {c.shortLabel || "C"}
-                  </span>
-                  <Input className="w-56" value={c.name} onChange={(e) => updateCaregiver(c.id, { name: e.target.value })} placeholder="Caregiver name" />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-sm">Short label</Label>
-                  <Input className="w-24" value={c.shortLabel}
-                    onChange={(e) => updateCaregiver(c.id, { shortLabel: e.target.value.slice(0, 2).toUpperCase() })} placeholder="C1" />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-sm">Colour</Label>
-                  <Input className="w-28" type="color" value={c.color} onChange={(e) => updateCaregiver(c.id, { color: e.target.value })} />
-                </div>
-                <Button variant="outline" className="ml-auto" onClick={() => removeCaregiver(c.id)}>Remove</Button>
-              </div>
+          <div className="text-xs opacity-70">Manage caregivers in Members. They don’t use leave but can cover days via overrides.</div>
+          <ul className="flex flex-col gap-2">
+            {caregivers.length === 0 && <li className="text-sm opacity-70">No caregivers added.</li>}
+            {caregivers.map((c, i) => (
+              <li key={c.id} className="flex items-center gap-2">
+                <span
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs"
+                  style={{ backgroundColor: c.color ?? palette[(i + 2) % palette.length] }}
+                  title="Badge colour"
+                >
+                  {c.shortLabel || "C"}
+                </span>
+                <span className="text-sm">{c.name}</span>
+              </li>
             ))}
-            <Button variant="outline" className="w-full sm:w-auto" onClick={addCaregiver}>+ Add caregiver</Button>
-          </div>
+          </ul>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div className="flex flex-col gap-1">
             <Label className="text-sm">Joint days (both off together)</Label>
             <Input
-              type="text" inputMode="numeric" className="no-spinners"
-              value={jointDays} min={0}
-              onChange={(e) => setJointDays(parseInt(e.target.value || "0", 10))}
-              disabled={!hasSecondParent}
-              title={!hasSecondParent ? "Add a second parent to use joint days" : ""}
-              onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()}
+              type="text"
+              inputMode="numeric"
+              className="no-spinners"
+              value={settings.jointDays}
+              min={0}
+              onChange={(e) => {
+                const v = parseInt(e.target.value || "0", 10);
+                if (Number.isFinite(v)) persistSettings({ jointDays: Math.max(0, v) });
+              }}
+              onFocus={(e) => e.currentTarget.select()}
+              onMouseUp={(e) => e.preventDefault()}
+              disabled={!parentB}
+              title={!parentB ? "Requires two parents" : ""}
             />
             <span className="text-xs opacity-70">Christmas & Summer prioritised.</span>
           </div>
 
           <label className="flex items-center gap-2">
-            <Checkbox id="skip-weekends" checked={skipWeekends} onCheckedChange={(v) => setSkipWeekends(!!v)} />
+            <Checkbox
+              id="skip-weekends"
+              checked={settings.skipWeekends}
+              onCheckedChange={(v) => persistSettings({ skipWeekends: !!v })}
+            />
             <span className="text-sm">Skip weekends</span>
           </label>
 
           <div className="flex flex-col gap-1">
             <Label className="text-sm">Bank holiday region</Label>
-            <Select value={region} onValueChange={(v: Region) => setRegion(v)}>
+            <Select value={settings.region} onValueChange={(v: Region) => persistSettings({ region: v })}>
               <SelectTrigger className="w-full"><SelectValue placeholder="Select region" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="england-and-wales">England & Wales</SelectItem>
@@ -550,9 +343,14 @@ export default function AnnualLeavePlanner() {
           </div>
 
           <div className="flex gap-2 w-full md:justify-end">
-            <Button onClick={applyPlan} className="whitespace-nowrap"><CalendarCog />
-              Auto-Plan</Button>
-            <Button variant="outline" onClick={clearPlan} className="whitespace-nowrap"><BrushCleaning /> Clear plan</Button>
+            <Button onClick={applyPlan} disabled={isPending} className="whitespace-nowrap">
+              <CalendarCog className="mr-2 h-4 w-4" />
+              Auto-Plan
+            </Button>
+            <Button variant="outline" onClick={clearPlan} disabled={isPending} className="whitespace-nowrap">
+              <BrushCleaning className="mr-2 h-4 w-4" />
+              Clear plan
+            </Button>
           </div>
         </div>
       </section>
@@ -566,20 +364,20 @@ export default function AnnualLeavePlanner() {
           <div className="text-lg font-medium text-center sm:text-left">
             {anchor.toLocaleString("default", { month: "long" })} {anchor.getFullYear()}
           </div>
-          <MonthPicker anchor={anchor} onChange={setAnchor} />
+          <MonthPicker anchor={anchor} onChange={(d) => setAnchor(new Date(d.getFullYear(), d.getMonth(), 1))} />
         </div>
 
         <div className="block md:hidden">
           <MobileMonthList
             days={monthDays}
             parentA={parentA}
-            parentB={hasSecondParent ? parentB : null}
+            parentB={parentB}
             caregivers={caregivers}
             closureSet={closureSet}
             planByDate={planByDate}
             bankHolidaySet={bankHolidaySet}
             setOverride={setOverride}
-            toggleClosure={toggleClosure}
+            toggleClosure={(d) => toggleClosure(ymd(d))}
             isToday={(d) => ymd(d) === ymd(new Date())}
           />
         </div>
@@ -598,25 +396,23 @@ export default function AnnualLeavePlanner() {
               const within = withinMonth(d);
 
               const w = d.getDay() as Weekday;
-              const offAByRule = parentA.offDays.includes(w) || (isBH && parentA.getsBankHolidays);
-              const offBByRule = hasSecondParent && (parentB.offDays.includes(w) || (isBH && parentB.getsBankHolidays));
+              const offAByRule = !!parentA && (parentA.offDays.includes(w) || (isBH && parentA.getsBankHolidays));
+              const offBByRule = !!parentB && (parentB.offDays.includes(w) || (isBH && parentB.getsBankHolidays));
               const cov = plan?.coverage;
 
               const chips: React.ReactNode[] = [];
               if (cov?.type === "leave") {
-                if (cov.who === "A" || cov.who === "both") chips.push(<Chip key="A" label={parentA.shortLabel || "A"} color={palette[0]} />);
-                if (hasSecondParent && (cov.who === "B" || cov.who === "both"))
-                  chips.push(<Chip key="B" label={parentB.shortLabel || "B"} color={palette[1]} />);
+                if ((cov.who === "A" || cov.who === "both") && parentA) chips.push(<Chip key="A" label={parentA.shortLabel || "A"} color={palette[0]} />);
+                if ((cov.who === "B" || cov.who === "both") && parentB) chips.push(<Chip key="B" label={parentB.shortLabel || "B"} color={palette[1]} />);
               } else if (cov?.type === "care") {
-                const cg = caregivers.find((c) => c.id === (cov as any).caregiverId);
-                if (cg) chips.push(<Chip key={cg.id} label={cg.shortLabel || "C"} color={cg.color} />);
+                const cg = caregivers.find((c) => c.id === cov.caregiverId);
+                if (cg) chips.push(<Chip key={cg.id} label={cg.shortLabel || "C"} color={cg.color ?? palette[3]} />);
               } else if (cov?.type === "off") {
-                if (cov.who === "A" || cov.who === "both") chips.push(<Chip key="Aoff" label={parentA.shortLabel || "A"} color="#94a3b8" muted />);
-                if (hasSecondParent && (cov.who === "B" || cov.who === "both"))
-                  chips.push(<Chip key="Boff" label={parentB.shortLabel || "B"} color="#94a3b8" muted />);
+                if (cov.who === "A" || cov.who === "both") chips.push(<Chip key="Aoff" label={parentA?.shortLabel || "A"} color="#94a3b8" muted />);
+                if (cov.who === "B" || cov.who === "both") chips.push(<Chip key="Boff" label={parentB?.shortLabel || "B"} color="#94a3b8" muted />);
               } else {
-                if (offAByRule) chips.push(<Chip key="Ahint" label={parentA.shortLabel || "A"} color="#94a3b8" muted />);
-                if (hasSecondParent && offBByRule) chips.push(<Chip key="Bhint" label={parentB.shortLabel || "B"} color="#94a3b8" muted />);
+                if (offAByRule) chips.push(<Chip key="Ahint" label={parentA?.shortLabel || "A"} color="#94a3b8" muted />);
+                if (offBByRule) chips.push(<Chip key="Bhint" label={parentB?.shortLabel || "B"} color="#94a3b8" muted />);
               }
 
               const closed = closureSet.has(id);
@@ -638,7 +434,7 @@ export default function AnnualLeavePlanner() {
                     boxShadow: isBH ? "inset 0 0 0 2px rgba(59,130,246,0.6)" : undefined,
                     borderTop: plan?.coverage.type === "none" && closed ? "3px solid rgba(239,68,68,0.6)" : undefined,
                   }}
-                  onDoubleClick={() => toggleClosure(d)}
+                  onDoubleClick={() => toggleClosure(id)}
                 >
                   <div className="text-xs mb-1 flex items-center justify-between">
                     <span className={`px-1.5 py-0.5 rounded ${within ? "" : "opacity-60"}`}>{d.getDate()}</span>
@@ -656,15 +452,15 @@ export default function AnnualLeavePlanner() {
                       <DropdownMenuContent align="end" className="w-52">
                         <DropdownMenuLabel>Override ({id})</DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => setOverride(id, "A")}>{parentA.name} leave</DropdownMenuItem>
-                        {hasSecondParent && <DropdownMenuItem onClick={() => setOverride(id, "B")}>{parentB.name} leave</DropdownMenuItem>}
-                        {hasSecondParent && <DropdownMenuItem onClick={() => setOverride(id, "both")}>Both leave</DropdownMenuItem>}
+                        {parentA && <DropdownMenuItem onClick={() => setOverride(id, "A")}>{parentA.name} leave</DropdownMenuItem>}
+                        {parentB && <DropdownMenuItem onClick={() => setOverride(id, "B")}>{parentB.name} leave</DropdownMenuItem>}
+                        {parentA && parentB && <DropdownMenuItem onClick={() => setOverride(id, "both")}>Both leave</DropdownMenuItem>}
                         {caregivers.length > 0 && (
                           <>
                             <DropdownMenuSeparator />
                             {caregivers.map((c) => (
                               <DropdownMenuItem key={c.id} onClick={() => setOverride(id, `C:${c.id}`)}>
-                                <span className="inline-block w-3 h-3 rounded mr-2" style={{ backgroundColor: c.color }} />
+                                <span className="inline-block w-3 h-3 rounded mr-2" style={{ backgroundColor: c.color ?? "#94a3b8" }} />
                                 {c.name}
                               </DropdownMenuItem>
                             ))}
@@ -693,16 +489,16 @@ export default function AnnualLeavePlanner() {
           <span className="badge badge-teal">Weekly day off / Bank hol. off</span>
           <span className="badge badge-pink">Allocated leave</span>
           <span className="px-2 py-0.5 rounded-full border border-red-400 text-red-600">Uncovered</span>
-          <span className="ml-auto">Tap to toggle • ⚙ override</span>
+          <span className="ml-auto">{isPending ? "Saving…" : "Tap to toggle • ⚙ override"}</span>
         </div>
       </section>
 
       <section className="card">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Stat label={`${parentA.name} leave used`} value={`${stats.usedA} d`} />
-          {hasSecondParent && <Stat label={`${parentB.name} leave used`} value={`${stats.usedB} d`} />}
-          <Stat label={`${parentA.name} remaining`} value={`${stats.remainingA} d`} />
-          {hasSecondParent && <Stat label={`${parentB.name} remaining`} value={`${stats.remainingB} d`} />}
+          <Stat label={`${parentA?.name ?? "Parent A"} leave used`} value={`${stats.usedA} d`} />
+          {parentB && <Stat label={`${parentB.name} leave used`} value={`${stats.usedB} d`} />}
+          <Stat label={`${parentA?.name ?? "Parent A"} remaining`} value={`${stats.remainingA} d`} />
+          {parentB && <Stat label={`${parentB.name} remaining`} value={`${stats.remainingB} d`} />}
           <Stat label={`Uncovered days`} value={`${stats.stillUncovered} d`} />
         </div>
         {!appliedPlan && (
@@ -716,13 +512,24 @@ export default function AnnualLeavePlanner() {
 }
 
 function ParentCard({
-  label, cfg, onChange, color, showBankToggle,
-}: { label: string; cfg: ParentConfig; onChange: (c: ParentConfig) => void; color: string; showBankToggle?: boolean; }) {
+  label,
+  cfg,
+  onChange,
+  color,
+  showBankToggle,
+}: {
+  label: string;
+  cfg: ParentConfigDTO;
+  onChange: (patch: Partial<Pick<ParentConfigDTO, "offDays" | "allowance" | "getsBankHolidays">>) => void;
+  color: string;
+  showBankToggle?: boolean;
+}) {
   const toggleOff = (w: Weekday) => {
-    const set = new Set(cfg.offDays);
-    set.has(w) ? set.delete(w) : set.add(w);
-    onChange({ ...cfg, offDays: Array.from(set).sort((a, b) => a - b) as Weekday[] });
+    const has = cfg.offDays.includes(w);
+    const next = has ? cfg.offDays.filter((x) => x !== w) : [...cfg.offDays, w];
+    onChange({ offDays: next.sort((a, b) => a - b) as Weekday[] });
   };
+
   return (
     <div className="p-3 border rounded-2xl">
       <div className="flex flex-wrap items-end gap-3 justify-between mb-3">
@@ -731,11 +538,11 @@ function ParentCard({
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs" style={{ backgroundColor: color }} title={label}>
               {cfg.shortLabel || (label === "Parent A" ? "A" : "B")}
             </span>
-            <Input className="w-full sm:w-56" value={cfg.name} onChange={(e) => onChange({ ...cfg, name: e.target.value })} placeholder={`${label} name`} />
+            <Input className="w-full sm:w-56" value={cfg.name} readOnly />
           </div>
           <div className="flex flex-col gap-1 w-24">
             <Label className="text-sm">Label</Label>
-            <Input value={cfg.shortLabel} onChange={(e) => onChange({ ...cfg, shortLabel: e.target.value.slice(0, 2).toUpperCase() })} placeholder={label === "Parent A" ? "A" : "B"} />
+            <Input value={cfg.shortLabel ?? ""} readOnly />
           </div>
         </div>
 
@@ -743,16 +550,23 @@ function ParentCard({
           <div className="flex flex-col gap-1">
             <Label className="text-sm whitespace-nowrap">Annual leave (days)</Label>
             <Input
-              type="text" inputMode="numeric" className="no-spinners" min={0}
+              type="text"
+              inputMode="numeric"
+              className="no-spinners"
+              min={0}
               value={cfg.allowance}
-              onChange={(e) => onChange({ ...cfg, allowance: parseInt(e.target.value || "0", 10) })}
-              onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()}
+              onChange={(e) => {
+                const v = parseInt(e.target.value || "0", 10);
+                if (Number.isFinite(v)) onChange({ allowance: Math.max(0, v) });
+              }}
+              onFocus={(e) => e.currentTarget.select()}
+              onMouseUp={(e) => e.preventDefault()}
             />
           </div>
 
           {showBankToggle && (
             <label className="flex items-center gap-2 whitespace-nowrap">
-              <Checkbox id={`${label}-bh`} checked={!!cfg.getsBankHolidays} onCheckedChange={(v) => onChange({ ...cfg, getsBankHolidays: !!v })} />
+              <Checkbox id={`${label}-bh`} checked={!!cfg.getsBankHolidays} onCheckedChange={(v) => onChange({ getsBankHolidays: !!v })} />
               <span className="text-sm">Gets bank holidays off</span>
             </label>
           )}
@@ -762,7 +576,7 @@ function ParentCard({
       <div className="space-y-1">
         <div className="text-sm opacity-80 mb-1">{label} weekly days off</div>
         <div className="flex flex-wrap gap-2">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((name, idx) => {
+          {weekdayName.map((name, idx) => {
             const active = cfg.offDays.includes(idx as Weekday);
             return (
               <Button key={name} type="button" variant={active ? "default" : "outline"} className="px-3 py-1.5 rounded-full" onClick={() => toggleOff(idx as Weekday)}>
@@ -834,41 +648,38 @@ function MobileMonthList({
   isToday,
 }: {
   days: Date[];
-  parentA: ParentConfig;
-  parentB: ParentConfig | null;
-  caregivers: Caregiver[];
+  parentA: ParentConfigDTO | null;
+  parentB: ParentConfigDTO | null;
+  caregivers: CaregiverDTO[];
   closureSet: Set<string>;
-  planByDate: Map<string, DayPlan>;
+  planByDate: Map<string, DayPlanDTO>;
   bankHolidaySet: Set<string>;
   setOverride: (id: string, code: OverrideCode) => void;
   toggleClosure: (d: Date) => void;
   isToday: (d: Date) => boolean;
 }) {
-  const hasSecondParent = !!parentB;
   const rows = days.map((d) => {
     const id = ymd(d);
     const isBH = bankHolidaySet.has(id);
     const cov = planByDate.get(id)?.coverage;
 
     const w = d.getDay() as Weekday;
-    const offAByRule = parentA.offDays.includes(w) || (isBH && parentA.getsBankHolidays);
-    const offBByRule = hasSecondParent && (parentB!.offDays.includes(w) || (isBH && parentB!.getsBankHolidays));
+    const offAByRule = !!parentA && (parentA.offDays.includes(w) || (isBH && parentA.getsBankHolidays));
+    const offBByRule = !!parentB && (parentB.offDays.includes(w) || (isBH && parentB.getsBankHolidays));
 
     const chips: React.ReactNode[] = [];
     if (cov?.type === "leave") {
-      if (cov.who === "A" || cov.who === "both") chips.push(<Chip key="A" label={parentA.shortLabel || "A"} color={palette[0]} />);
-      if (hasSecondParent && (cov.who === "B" || cov.who === "both"))
-        chips.push(<Chip key="B" label={parentB!.shortLabel || "B"} color={palette[1]} />);
+      if ((cov.who === "A" || cov.who === "both") && parentA) chips.push(<Chip key="A" label={parentA.shortLabel || "A"} color="#3B82F6" />);
+      if ((cov.who === "B" || cov.who === "both") && parentB) chips.push(<Chip key="B" label={parentB.shortLabel || "B"} color="#10B981" />);
     } else if (cov?.type === "care") {
-      const cg = caregivers.find((c) => c.id === (cov as any).caregiverId);
-      if (cg) chips.push(<Chip key={cg.id} label={cg.shortLabel || "C"} color={cg.color} />);
+      const cg = caregivers.find((c) => c.id === cov.caregiverId);
+      if (cg) chips.push(<Chip key={cg.id} label={cg.shortLabel || "C"} color={cg.color ?? "#8B5CF6"} />);
     } else if (cov?.type === "off") {
-      if (cov.who === "A" || cov.who === "both") chips.push(<Chip key="Aoff" label={parentA.shortLabel || "A"} color="#94a3b8" muted />);
-      if (hasSecondParent && (cov.who === "B" || cov.who === "both"))
-        chips.push(<Chip key="Boff" label={parentB!.shortLabel || "B"} color="#94a3b8" muted />);
+      if (cov.who === "A" || cov.who === "both") chips.push(<Chip key="Aoff" label={parentA?.shortLabel || "A"} color="#94a3b8" muted />);
+      if (cov.who === "B" || cov.who === "both") chips.push(<Chip key="Boff" label={parentB?.shortLabel || "B"} color="#94a3b8" muted />);
     } else {
-      if (offAByRule) chips.push(<Chip key="Ahint" label={parentA.shortLabel || "A"} color="#94a3b8" muted />);
-      if (hasSecondParent && offBByRule) chips.push(<Chip key="Bhint" label={parentB!.shortLabel || "B"} color="#94a3b8" muted />);
+      if (offAByRule) chips.push(<Chip key="Ahint" label={parentA?.shortLabel || "A"} color="#94a3b8" muted />);
+      if (offBByRule) chips.push(<Chip key="Bhint" label={parentB?.shortLabel || "B"} color="#94a3b8" muted />);
     }
 
     const closed = closureSet.has(id);
@@ -894,12 +705,7 @@ function MobileMonthList({
           </div>
 
           <div className="mt-2 flex items-center gap-2">
-            <Button
-              size="sm"
-              variant={closed ? "default" : "outline"}
-              className="h-8"
-              onClick={() => toggleClosure(d)}
-            >
+            <Button size="sm" variant={closed ? "default" : "outline"} className="h-8" onClick={() => toggleClosure(d)}>
               {closed ? "Unset closure" : "Set as closure"}
             </Button>
 
@@ -912,15 +718,15 @@ function MobileMonthList({
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Override ({id})</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setOverride(id, "A")}>{parentA.name} leave</DropdownMenuItem>
-                {hasSecondParent && <DropdownMenuItem onClick={() => setOverride(id, "B")}>{parentB!.name} leave</DropdownMenuItem>}
-                {hasSecondParent && <DropdownMenuItem onClick={() => setOverride(id, "both")}>Both leave</DropdownMenuItem>}
+                {parentA && <DropdownMenuItem onClick={() => setOverride(id, "A")}>{parentA.name} leave</DropdownMenuItem>}
+                {parentB && <DropdownMenuItem onClick={() => setOverride(id, "B")}>{parentB.name} leave</DropdownMenuItem>}
+                {parentA && parentB && <DropdownMenuItem onClick={() => setOverride(id, "both")}>Both leave</DropdownMenuItem>}
                 {caregivers.length > 0 && (
                   <>
                     <DropdownMenuSeparator />
                     {caregivers.map((c) => (
                       <DropdownMenuItem key={c.id} onClick={() => setOverride(id, `C:${c.id}`)}>
-                        <span className="inline-block w-3 h-3 rounded mr-2" style={{ backgroundColor: c.color }} />
+                        <span className="inline-block w-3 h-3 rounded mr-2" style={{ backgroundColor: c.color ?? "#94a3b8" }} />
                         {c.name}
                       </DropdownMenuItem>
                     ))}

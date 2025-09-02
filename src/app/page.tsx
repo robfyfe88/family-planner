@@ -142,7 +142,6 @@ export default function LandingPage() {
             </ul>
           </div>
 
-          {/* Pro */}
           <div className="rounded-xl border p-4 bg-white">
             <div className="flex items-center justify-between">
               <span className="pill pill-emerald">Pro</span>
@@ -157,7 +156,6 @@ export default function LandingPage() {
             </ul>
           </div>
 
-          {/* Family */}
           <div className="rounded-xl border p-4 bg-white">
             <div className="flex items-center justify-between">
               <span className="pill pill-sky">Family</span>
@@ -174,8 +172,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-
-      {/* Footer */}
       <footer className="max-w-6xl mx-auto px-4 sm:px-6 py-10 text-sm opacity-70">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>© {new Date().getFullYear()} hearthPlan</div>

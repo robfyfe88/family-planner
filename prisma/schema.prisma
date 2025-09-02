@@ -42,22 +42,69 @@ model Household {
 
   nurserySettings NurserySettings?
   nurseryChildren NurseryChild[]
+
+  annualSettings  AnnualSettings?
+  careAssignments CareAssignment[]
 }
 
 model Member {
-  id          String     @id @default(cuid())
-  householdId String
-  name        String
-  role        MemberRole
-  shortLabel  String?
-  color       String?
-  slot        String?
-  userId      String?    @unique
-  inviteEmail String?
-  household   Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  id             String           @id @default(cuid())
+  householdId    String
+  name           String
+  role           MemberRole
+  shortLabel     String?
+  color          String?
+  slot           String?
+  userId         String?          @unique
+  inviteEmail    String?
+  household      Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ParentPrefs    ParentPrefs[]
+  CareAssignment CareAssignment[]
 
   @@index([householdId])
   @@index([inviteEmail])
+}
+
+enum BankHolidayRegion {
+  england_and_wales
+  scotland
+  northern_ireland
+}
+
+model AnnualSettings {
+  householdId       String            @id
+  region            BankHolidayRegion @default(england_and_wales)
+  skipWeekends      Boolean           @default(true)
+  jointDays         Int               @default(5)
+  prioritizeSeasons Boolean           @default(true)
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+model ParentPrefs {
+  // one row per *parent* member
+  memberId         String  @id
+  offDaysBitmask   Int     @default(0) // Sun..Sat -> bits 0..6
+  allowanceDays    Int     @default(20)
+  getsBankHolidays Boolean @default(false)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model CareAssignment {
+  id          String   @id @default(cuid())
+  householdId String
+  date        DateTime
+  caregiverId String
+  // Mark assignments created by "Auto-Plan" so Clear can safely remove them.
+  isAuto      Boolean  @default(false)
+  notes       String?
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  caregiver Member    @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, date, caregiverId])
+  @@index([householdId, date])
 }
 
 enum MemberRole {
