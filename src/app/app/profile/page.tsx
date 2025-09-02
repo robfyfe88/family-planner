@@ -20,6 +20,8 @@ import { GoogleIcon } from "@/components/ui/GoogleIcon";
 import { capsForTier, MemberRoleAny, PLAN_LABEL, PlanTier, showInviteEmail, validateEmail } from "@/lib/profile-utils";
 import MemberCard from "@/components/profile/MemberCard";
 import AddMemberCard from "@/components/profile/AddMemberCard";
+import { UserMenu } from "@/components/ui/UserMenu";
+import HearthPlanLogo from "@/components/HearthPlanLogo";
 
 export default function ProfilePage() {
     const { data: session, status } = useSession();
@@ -68,7 +70,7 @@ function ProfileInner() {
     const [nmRole, setNmRole] = React.useState<MemberRoleAny>("child");
     const [nmEmail, setNmEmail] = React.useState("");
     const [busyAdd, setBusyAdd] = React.useState(false);
-
+    const { data: session } = useSession();
     React.useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -169,6 +171,11 @@ function ProfileInner() {
 
     return (
         <div className="max-w-5xl mx-auto p-3 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between w-full">
+                <HearthPlanLogo size={50} variant="app" />
+                {session?.user && <UserMenu user={session.user} />}
+            </div>
+
             <div className="flex items-center justify-between">
                 <div className="flex items-start gap-2">
                     <Button
@@ -184,7 +191,6 @@ function ProfileInner() {
                     </Button>
                     <h1 className="ml-1 text-lg sm:text-xl font-semibold">Profile & Household</h1>
                 </div>
-                <PlanBadge tier={planTier} />
             </div>
 
             {isFree && (
@@ -238,7 +244,11 @@ function ProfileInner() {
             )}
 
             <section className="rounded-2xl border bg-white p-4 sm:p-5">
-                <h2 className="text-base sm:text-lg font-semibold mb-3">Household</h2>
+                <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-base sm:text-lg font-semibold mb-3">Household</h2>
+                    <PlanBadge tier={planTier} />
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                     <Input
                         className="w-full sm:w-96"
@@ -348,7 +358,7 @@ function PlanBadge({ tier }: { tier: PlanTier }) {
                     ? "bg-violet-600"
                     : "bg-gray-600";
     return (
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white ${tone}`}>
+        <span className={`inline-flex items-center gap-1 px-2 mr-1 py-1 rounded-full text-xs text-white ${tone}`}>
             <Shield className="h-3 w-3" />
             {label}
         </span>

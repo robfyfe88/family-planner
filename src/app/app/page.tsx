@@ -42,10 +42,6 @@ export default function AppHome() {
   const user = session.user;
   return (
     <div className="p-2 space-y-4">
-      <header className="flex items-center justify-between gap-3">
-        <HearthPlanLogo size={50} variant="app" />
-        <UserMenu user={user} />
-      </header>
       <FamilyToolsPage />
     </div>
   );

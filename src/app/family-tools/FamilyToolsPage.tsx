@@ -5,6 +5,9 @@ import AnnualLeavePlanner from "./AnnualLeavePlanner";
 import NurseryPlannerPage from "./NurseryCostPlanner";
 import FamilyBudgetPlanner from "./FamilyBudgetPlanner";
 import ActivitiesPlanner from "./ActivitiesPlannner";
+import HearthPlanLogo from "@/components/HearthPlanLogo";
+import { UserMenu } from "@/components/ui/UserMenu";
+import { useSession } from "next-auth/react";
 
 type TabKey = "nursery" | "leave" | "budget" | "activities";
 
@@ -24,7 +27,7 @@ export default function FamilyToolsPage() {
   const [tab, setTab] = React.useState<TabKey>("budget");
   const [mounted, setMounted] = React.useState(false);
   const hasSyncedRef = React.useRef(false);
-
+    const { data: session } = useSession();
   React.useEffect(() => {
     setTab(readTabFromURLorLS());
     setMounted(true);
@@ -90,6 +93,10 @@ export default function FamilyToolsPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+                              <div className="flex items-center justify-between w-full">
+                                  <HearthPlanLogo size={50} variant="app" />
+                                  {session?.user && <UserMenu user={session.user} />}
+                              </div>
       <header className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
         <div className="block sm:hidden sticky top-0 z-30 -mx-4 px-4 py-2 bg-[var(--background)]/80 backdrop-blur">
           <nav aria-label="Planner tabs (mobile)">

@@ -27,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ToasterProvider />
+
         <Providers>{children}</Providers>
       </body>
     </html>

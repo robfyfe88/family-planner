@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { fetchSubscription, setSubscriptionTier, cancelToFree, type PlanTier } from "./actions";
 import { Check, Shield, Crown, Users, AlertTriangle, ArrowLeft } from "lucide-react";
 import { GoogleIcon } from "@/components/ui/GoogleIcon";
+import { UserMenu } from "@/components/ui/UserMenu";
+import HearthPlanLogo from "@/components/HearthPlanLogo";
 
 type TierCardProps = {
     tier: PlanTier;
@@ -125,6 +127,10 @@ export default function SubscribePage() {
 
     return (
         <div className="max-w-5xl mx-auto p-3 sm:p-6 space-y-5">
+                        <div className="flex items-center justify-between w-full">
+                            <HearthPlanLogo size={50} variant="app" />
+                            {session?.user && <UserMenu user={session.user} />}
+                        </div>
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Button
@@ -288,7 +294,7 @@ function PlanBadge({ tier, status, periodEndISO }: { tier: PlanTier; status: str
             : tier.charAt(0).toUpperCase() + tier.slice(1);
 
     return (
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white ${tone}`}>
+        <span className={`inline-flex items-center gap-1 px-2 py-1 mr-1 rounded-full text-xs text-white ${tone}`}>
             <Shield className="h-3 w-3" />
             {label}
             {periodEndISO && tier === "trial" ? (

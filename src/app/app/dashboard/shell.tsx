@@ -8,11 +8,20 @@ import { formatDay } from "@/lib/utils";
 import Section from "@/components/Section";
 import Stat from "@/components/Stat";
 import WeekBars from "@/components/Weekbars";
+import { UserMenu } from "@/components/ui/UserMenu";
+
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default async function DashboardShell() {
-  const [s, budget] = await Promise.all([getDashboardData(), getBudgetInsights()]);
+  const [s, budget, session] = await Promise.all([
+    getDashboardData(),
+    getBudgetInsights(),
+    getServerSession(authOptions),
+  ]);
+
   const monthLabel = budget?.monthLabel ?? "This month";
   const plannedIncomeStr = budget?.plannedIncomeStr ?? "£0";
   const plannedExpenseStr = budget?.plannedExpenseStr ?? "£0";
@@ -20,10 +29,12 @@ export default async function DashboardShell() {
   const totalPotsStr = budget?.totalPotsStr ?? "£0";
   const topPotNote = budget?.topPotNote ?? "";
   const byMonth = budget?.byMonth ?? { income: {}, expense: {}, savings: {} };
+
   const potDefs: PotDef[] = (budget?.savingsByPot ?? []).map((p: any) => ({
     key: `pot:${p.id}`,
     name: p.name,
   }));
+
   let savingsRun = 0;
   const potRun: Record<string, number> = {};
   const trendData = MONTHS.map((m, i) => {
@@ -31,7 +42,6 @@ export default async function DashboardShell() {
     const incomeGBP = Math.round((byMonth.income?.[idx] ?? 0) / 100);
     const expensesGBP = Math.round((byMonth.expense?.[idx] ?? 0) / 100);
     const savingsGBP = Math.round((byMonth.savings?.[idx] ?? 0) / 100);
-
     savingsRun += savingsGBP;
 
     const point: Record<string, number | string> = {
@@ -55,16 +65,13 @@ export default async function DashboardShell() {
     <div className="max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-6">
       <header className="flex items-center justify-between gap-3">
         <HearthPlanLogo size={50} variant="app" />
+        {session?.user ? <UserMenu user={session.user} /> : null}
       </header>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between ">
         <div>
-          <div className="text-xs opacity-70">Household</div>
-          <h1 className="text-xl font-semibold">{s.householdName}</h1>
+          <h1 className="text-xl font-bold ml-1">{s.householdName}</h1>
         </div>
-        <Link href="/app" className="px-3 py-1.5 rounded-full text-sm border bg-white">
-          Open planner
-        </Link>
       </div>
 
       <Section title="Budget overview" ctaHref="/app#budget" ctaLabel="Open Family Budget" tone="violet">
@@ -73,24 +80,16 @@ export default async function DashboardShell() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <Stat label="Planned income" value={plannedIncomeStr} sub={monthLabel} />
             <Stat label="Planned expenses" value={plannedExpenseStr} sub={monthLabel} />
-            <Stat
-              label="Net plan"
-              value={netPlanStr}
-              sub={budget?.netPlanNote}
-            />
+            <Stat label="Net plan" value={netPlanStr} sub={budget?.netPlanNote} />
             <Stat label="Saved so far" value={totalPotsStr} sub={topPotNote} />
           </div>
         </div>
-
         {!!budget?.topCategories?.length && (
           <div className="mt-4">
             <div className="text-xs opacity-70 mb-2">Top planned categories</div>
             <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {budget.topCategories.map((c: any, i: number) => (
-                <li
-                  key={i}
-                  className="rounded-lg border px-3 py-2 bg-white flex items-center justify-between"
-                >
+                <li key={i} className="rounded-lg border px-3 py-2 bg-white flex items-center justify-between">
                   <span className="text-sm">{c.name}</span>
                   <span className="text-sm font-medium">{c.plannedStr}</span>
                 </li>
