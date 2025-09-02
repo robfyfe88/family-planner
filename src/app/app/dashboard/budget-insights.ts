@@ -28,15 +28,15 @@ export type BudgetInsights = {
   topPotNote: string;
 
   byMonth: {
-    income: Record<number, number>;   // pence per month
-    expense: Record<number, number>;  // pence per month
-    savings: Record<number, number>;  // pence per month
+    income: Record<number, number>;   
+    expense: Record<number, number>; 
+    savings: Record<number, number>;  
   };
 
   savingsByPot: Array<{
     id: string;
     name: string;
-    monthly: Record<number, number>;  // pence per month
+    monthly: Record<number, number>;  
   }>;
 
   topCategories: Array<{
@@ -74,7 +74,6 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
 
   const monthLabel = format(now, "MMM yyyy");
 
-  // Pots (balances + plans) ---------------------------------------------
   const pots = await prisma.savingsPot.findMany({
     where: { householdId },
     orderBy: { balancePence: "desc" },
@@ -94,8 +93,6 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
     if (pot) pot.monthly[r.month] = (pot.monthly[r.month] ?? 0) + (r.amountPence ?? 0);
   }
 
-  // Budget lines (income/expense) from BudgetLine + overrides ------------
-  // Pull all lines that overlap this year and their overrides for this year
   const lines = await prisma.budgetLine.findMany({
     where: {
       householdId,
@@ -111,14 +108,12 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
 
   const byMonth: BudgetInsights["byMonth"] = { income: {}, expense: {}, savings: {} };
 
-  // Initialise months 1..12
   for (let m = 1; m <= 12; m++) {
     byMonth.income[m] = 0;
     byMonth.expense[m] = 0;
-    byMonth.savings[m] = 0; // will fill from potPlansYear below
+    byMonth.savings[m] = 0; 
   }
 
-  // Sum per-month income/expense using override (if present) else default
   for (let m = 1; m <= 12; m++) {
     const start = monthStart(year, m);
 
@@ -134,29 +129,24 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
 
       if (line.flow === "income") byMonth.income[m] += amount;
       else if (line.flow === "expense") byMonth.expense[m] += amount;
-      // transfers are ignored on the overview chart
     }
   }
 
-  // Savings per month (from pot monthly plans)
   for (let m = 1; m <= 12; m++) {
     const savM = potPlansYear
       .filter((p : any) => p.month === m)
       .reduce((s : any, p : any) => s + (p.amountPence ?? 0), 0);
     byMonth.savings[m] = savM;
 
-    // ensure every pot has a 0 for missing months
     for (const pot of savingsByPotMap.values()) {
       if (pot.monthly[m] == null) pot.monthly[m] = 0;
     }
   }
 
-  // Current-month planned totals
   const plannedIncomePence = byMonth.income[month] ?? 0;
   const plannedExpensePence = byMonth.expense[month] ?? 0;
   const netPlanPence = plannedIncomePence - plannedExpensePence;
 
-  // Top “categories” (derive from line.category if present, else line.label)
   const topAgg = new Map<
     string,
     { id: string; name: string; flow: Flow; plannedPence: number }

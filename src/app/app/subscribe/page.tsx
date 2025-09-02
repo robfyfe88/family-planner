@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { fetchSubscription, setSubscriptionTier, cancelToFree, type PlanTier } from "./actions";
 import { Check, Shield, Crown, Users, AlertTriangle, ArrowLeft } from "lucide-react";
+import { GoogleIcon } from "@/components/ui/GoogleIcon";
 
 type TierCardProps = {
     tier: PlanTier;
@@ -294,16 +295,5 @@ function PlanBadge({ tier, status, periodEndISO }: { tier: PlanTier; status: str
                 <span className="opacity-90 ml-1">(ends {new Date(periodEndISO).toLocaleDateString()})</span>
             ) : null}
         </span>
-    );
-}
-
-function GoogleIcon() {
-    return (
-        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
-            <path fill="#EA4335" d="M24 9.5c3.7 0 6.9 1.3 9.5 3.8l7.1-7.1C36.9 2.2 30.9 0 24 0 14.6 0 6.4 5.4 2.5 13.2l8.6 6.7C12.9 14.3 17.9 9.5 24 9.5z" />
-            <path fill="#4285F4" d="M46.5 24.5c0-1.7-.2-3.3-.6-4.9H24v9.3h12.7c-.6 3-2.3 5.6-4.8 7.3l7.4 5.7c4.3-3.9 6.8-9.6 6.8-17.4z" />
-            <path fill="#FBBC05" d="M11.1 27.9c-.5-1.5-.8-3.1-.8-4.9s.3-3.4.8-4.9l-8.6-6.7C.9 13.9 0 18.8 0 23s.9 9.1 2.5 12.6l8.6-7.7z" />
-            <path fill="#34A853" d="M24 48c6.5 0 12-2.1 16-5.8l-7.4-5.7c-2.1 1.4-4.8 2.2-8.6 2.2-6.1 0-11.1-4.8-12.9-11.1l-8.6 7.7C6.4 42.6 14.6 48 24 48z" />
-        </svg>
     );
 }

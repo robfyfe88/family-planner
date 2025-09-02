@@ -9,7 +9,6 @@ export type SubStatus = "active" | "trialing" | "past_due" | "canceled";
 function capsForTier(tier: PlanTier) {
   if (tier === "family") return { parents: Infinity, caregivers: Infinity };
   if (tier === "pro" || tier === "trial") return { parents: 2, caregivers: 1 };
-  // FREE: allow 1 parent, 0 caregivers
   return { parents: 1, caregivers: 0 };
 }
 

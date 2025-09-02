@@ -1,159 +1,15 @@
 import Link from "next/link";
 import { getBudgetInsights } from "./budget-insights";
-import format from "date-fns/format";
 import { getDashboardData } from "./actions";
 import HearthPlanLogo from "@/components/HearthPlanLogo";
 import BudgetTrendChart, { PotDef } from "@/components/BudgetTrendChart";
-import { Button } from "@/components/ui/button";
 import React from "react";
+import { formatDay } from "@/lib/utils";
+import Section from "@/components/Section";
+import Stat from "@/components/Stat";
+import WeekBars from "@/components/Weekbars";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function Section({
-  title,
-  ctaHref,
-  ctaLabel,
-  tone = "blue",
-  children,
-}: {
-  title: string;
-  ctaHref: string;
-  ctaLabel: string;
-  tone?: "blue" | "green" | "amber" | "violet";
-  children: React.ReactNode;
-}) {
-  const ring =
-    tone === "green"
-      ? "ring-emerald-200"
-      : tone === "amber"
-      ? "ring-amber-200"
-      : tone === "violet"
-      ? "ring-violet-200"
-      : "ring-blue-200";
-
-  const pillBg =
-    tone === "green"
-      ? "bg-emerald-600 hover:bg-emerald-700"
-      : tone === "amber"
-      ? "bg-amber-600 hover:bg-amber-700"
-      : tone === "violet"
-      ? "bg-violet-600 hover:bg-violet-700"
-      : "bg-blue-600 hover:bg-blue-700";
-
-  return (
-    <section className={`rounded-2xl border bg-white p-4 sm:p-5 ring-1 ${ring}`}>
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
-        <Link href={ctaHref} passHref>
-          <Button className={`${pillBg} text-white cursor-pointer px-3 py-1.5 text-sm`}>
-            {ctaLabel}
-          </Button>
-        </Link>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-}) {
-  return (
-    <div>
-      <div className="text-xs opacity-70">{label}</div>
-      <div className="text-xl font-semibold leading-tight">{value}</div>
-      {sub ? <div className="text-xs opacity-60 mt-0.5">{sub}</div> : null}
-    </div>
-  );
-}
-
-function formatDay(iso: string) {
-  const d = new Date(iso + "T00:00:00");
-  return format(d, "EEE d MMM");
-}
-
-function Donut({
-  value,
-  total,
-  size = 120,
-  stroke = 12,
-  centerLabel,
-}: {
-  value: number;
-  total: number;
-  size?: number;
-  stroke?: number;
-  centerLabel?: string;
-}) {
-  const safeTotal = Math.max(1, total);
-  const ratio = Math.max(0, Math.min(1, value / safeTotal));
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const dash = circumference * ratio;
-
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          strokeWidth={stroke}
-          fill="none"
-          className="stroke-gray-200"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          strokeWidth={stroke}
-          fill="none"
-          className="stroke-blue-600"
-          strokeDasharray={`${dash} ${circumference - dash}`}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </svg>
-      <div className="absolute inset-0 grid place-items-center">
-        <div className="text-center">
-          <div className="text-xs opacity-70">Progress</div>
-          <div className="text-sm font-semibold">{Math.round(ratio * 100)}%</div>
-          {centerLabel ? (
-            <div className="text-[11px] opacity-60 leading-tight">{centerLabel}</div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WeekBars({ counts }: { counts: number[] }) {
-  const max = Math.max(1, ...counts);
-  const labels = ["S", "M", "T", "W", "T", "F", "S"];
-  return (
-    <div className="grid grid-cols-7 gap-2">
-      {counts.map((n, i) => (
-        <div key={i} className="flex flex-col items-center gap-1">
-          <div className="h-24 w-7 rounded bg-gray-100 border relative overflow-hidden">
-            <div
-              className="absolute bottom-0 left-0 right-0 bg-violet-600/80"
-              style={{ height: `${(n / max) * 100}%` }}
-              aria-label={`${labels[i]} has ${n} activity(ies)`}
-            />
-          </div>
-          <div className="text-[11px] opacity-70">{labels[i]}</div>
-          <div className="text-[11px] opacity-80">{n}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default async function DashboardShell() {
   const [s, budget] = await Promise.all([getDashboardData(), getBudgetInsights()]);
@@ -163,25 +19,15 @@ export default async function DashboardShell() {
   const netPlanStr = budget?.netPlanStr ?? "£0";
   const totalPotsStr = budget?.totalPotsStr ?? "£0";
   const topPotNote = budget?.topPotNote ?? "";
-  const plannedIncomePence = budget?.plannedIncomePence ?? 0;
-  const plannedExpensePence = budget?.plannedExpensePence ?? 0;
-
   const byMonth = budget?.byMonth ?? { income: {}, expense: {}, savings: {} };
-
-  // Build cumulative lines for Savings and each pot.
-  // Chart expects: income, expenses (monthly), savingsCum (cumulative),
-  // plus dynamic pot keys: `pot:<id>` (cumulative).
   const potDefs: PotDef[] = (budget?.savingsByPot ?? []).map((p: any) => ({
     key: `pot:${p.id}`,
     name: p.name,
   }));
-
   let savingsRun = 0;
   const potRun: Record<string, number> = {};
-
   const trendData = MONTHS.map((m, i) => {
     const idx = i + 1;
-
     const incomeGBP = Math.round((byMonth.income?.[idx] ?? 0) / 100);
     const expensesGBP = Math.round((byMonth.expense?.[idx] ?? 0) / 100);
     const savingsGBP = Math.round((byMonth.savings?.[idx] ?? 0) / 100);
