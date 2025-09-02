@@ -24,7 +24,7 @@ export type CaregiverDTO = {
 };
 
 export type DayPlanDTO = {
-    date: string; 
+    date: string;
     weekday: string;
     coverage:
     | { type: "none" }
@@ -52,6 +52,8 @@ type ParentPrefsRow = {
     allowanceDays: number;
     getsBankHolidays: boolean;
 };
+type LeaveRow = { memberId: string | null; startDate: Date; endDate: Date; type: string | null };
+type CareRow = { date: Date; caregiverId: string };
 
 const weekdayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ymd = (d: Date) =>
@@ -159,11 +161,12 @@ export async function fetchAnnualData(): Promise<AnnualData> {
     });
     const closureISO = closures.map((row: { date: Date; }) => ymd(row.date));
 
-    const care = await prisma.careAssignment.findMany({
+    const care: CareRow[] = await prisma.careAssignment.findMany({
         where: { householdId },
         select: { date: true, caregiverId: true },
     });
-    const leaves = await prisma.leave.findMany({
+
+    const leaves: LeaveRow[] = await prisma.leave.findMany({
         where: { householdId },
         select: { memberId: true, startDate: true, endDate: true, type: true },
     });
@@ -171,30 +174,29 @@ export async function fetchAnnualData(): Promise<AnnualData> {
     const parentA = parentDTOs[0];
     const parentB = parentDTOs[1];
 
+
+
     const plan: DayPlanDTO[] = closureISO.map((date: string) => {
         const d = parseISO(date);
         const w = d.getUTCDay();
 
-        const coveredByA = !!(
+        const coveredByA = Boolean(
             parentA &&
-            leaves.some(
-                (L: { memberId: string; startDate: string | number; endDate: string | number; }) =>
-                    L.memberId === parentA.memberId &&
-                    +d >= +L.startDate &&
-                    +d <= +L.endDate
-            )
-        );
-        const coveredByB = !!(
-            parentB &&
-            leaves.some(
-                (L: { memberId: string; startDate: string | number; endDate: string | number; }) =>
-                    L.memberId === parentB.memberId &&
-                    +d >= +L.startDate &&
-                    +d <= +L.endDate
+            leaves.some(L =>
+                L.memberId === parentA.memberId &&
+                d >= L.startDate && d <= L.endDate
             )
         );
 
-        const careRow = care.find((c: { date: Date; }) => ymd(c.date) === date);
+        const coveredByB = Boolean(
+            parentB &&
+            leaves.some(L =>
+                L.memberId === parentB.memberId &&
+                d >= L.startDate && d <= L.endDate
+            )
+        );
+
+        const careRow = care.find(c => ymd(c.date) === date);
 
         let coverage: DayPlanDTO["coverage"] = { type: "none" };
         if (coveredByA && coveredByB) coverage = { type: "leave", who: "both" };
@@ -204,6 +206,7 @@ export async function fetchAnnualData(): Promise<AnnualData> {
 
         return { date, weekday: weekdayName[w], coverage };
     });
+
 
     return {
         settings: {
@@ -260,7 +263,7 @@ export async function upsertParentPrefs(input: {
     });
 }
 
-export async function toggleClosure(dateISO: string, p0: boolean) {
+export async function toggleClosure(dateISO: string) {
     const householdId = await getHouseholdIdOrThrow();
     const date = parseISO(dateISO);
 
@@ -689,7 +692,7 @@ export async function autoPlanAndSave() {
         jointDays: settings.jointDays,
         skipWeekends: settings.skipWeekends,
         overrides: {},
-        bankHolidaySet: new Set<string>(), 
+        bankHolidaySet: new Set<string>(),
         prioritizeSeasons: settings.prioritizeSeasons,
     };
 

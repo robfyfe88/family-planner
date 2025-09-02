@@ -162,13 +162,13 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
       was ? s.delete(id) : s.add(id);
       return Array.from(s).sort();
     });
-    start(async () => { await toggleClosureAction(id, !was); });
+    start(async () => { await toggleClosureAction(id); });
   };
 
   const setOverride = (dateISO: string, code: OverrideCode) => {
     if (code !== "clear" && !closureSet.has(dateISO)) {
       setClosures((prev) => [...prev, dateISO].sort());
-      start(async () => { await toggleClosureAction(dateISO, true); }); 
+      start(async () => { await toggleClosureAction(dateISO); }); 
     }
     start(async () => { await setOverrideAction(dateISO, code); });
   };
@@ -210,7 +210,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
     start(async () => {
       const toFlip = ids.filter((id) => (dragIntentAdd ? !before.has(id) : before.has(id)));
-      await Promise.all(toFlip.map((id) => toggleClosureAction(id, dragIntentAdd)));
+      await Promise.all(toFlip.map((id) => toggleClosureAction(id)));
     });
 
     setDragging(false); setDragStart(null); setDragEnd(null);
