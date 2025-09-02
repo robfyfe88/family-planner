@@ -174,8 +174,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
     const parentA = parentDTOs[0];
     const parentB = parentDTOs[1];
 
-
-
     const plan: DayPlanDTO[] = closureISO.map((date: string) => {
         const d = parseISO(date);
         const w = d.getUTCDay();
@@ -221,6 +219,14 @@ export async function fetchAnnualData(): Promise<AnnualData> {
         plan,
     };
 }
+
+export async function updateMemberBasics(
+  memberId: string,
+  patch: { name?: string; shortLabel?: string | null; color?: string | null }
+) {
+  await prisma.member.update({ where: { id: memberId }, data: patch });
+}
+
 
 export async function updateAnnualSettings(
     patch: Partial<{

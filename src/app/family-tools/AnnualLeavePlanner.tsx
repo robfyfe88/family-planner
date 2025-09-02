@@ -20,6 +20,7 @@ import {
   setOverride as setOverrideAction,
   autoPlanAndSave,
   clearAutoPlan,
+  updateMemberBasics,
 } from "../app/annual/actions";
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -53,10 +54,10 @@ type CaregiverDTO = {
 
 type AnnualData = {
   settings: { region: Region; skipWeekends: boolean; jointDays: number; prioritizeSeasons: boolean };
-  parents: ParentConfigDTO[]; 
+  parents: ParentConfigDTO[];
   caregivers: CaregiverDTO[];
-  closures: string[];      
-  plan: DayPlanDTO[];      
+  closures: string[];
+  plan: DayPlanDTO[];
 };
 
 const weekdayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -106,7 +107,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
   const [settings, setSettings] = React.useState(initial.settings);
   const [parentA, setParentA] = React.useState<ParentConfigDTO | null>(initial.parents[0] ?? null);
   const [parentB, setParentB] = React.useState<ParentConfigDTO | null>(initial.parents[1] ?? null);
-  const [caregivers] = React.useState<CaregiverDTO[]>(initial.caregivers); 
+  const [caregivers, setCaregivers] = React.useState<CaregiverDTO[]>(initial.caregivers);
   const [closures, setClosures] = React.useState<string[]>(initial.closures);
   const [appliedPlan, setAppliedPlan] = React.useState<DayPlanDTO[] | null>(initial.plan ?? null);
 
@@ -131,7 +132,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     "northern-ireland": Set<string>;
   }>({ "england-and-wales": new Set(), scotland: new Set(), "northern-ireland": new Set() });
   const bankHolidaySet = useMemo(() => bhSets[settings.region], [bhSets, settings.region]);
-  React.useEffect(() => { (async () => { try { setBhSets(await fetchBankHolidays()); } catch {} })(); }, []);
+  React.useEffect(() => { (async () => { try { setBhSets(await fetchBankHolidays()); } catch { } })(); }, []);
 
   const persistSettings = (patch: Partial<typeof settings>) => {
     const next = { ...settings, ...patch };
@@ -168,14 +169,31 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
   const setOverride = (dateISO: string, code: OverrideCode) => {
     if (code !== "clear" && !closureSet.has(dateISO)) {
       setClosures((prev) => [...prev, dateISO].sort());
-      start(async () => { await toggleClosureAction(dateISO); }); 
+      start(async () => { await toggleClosureAction(dateISO); });
     }
+
+    setAppliedPlan((prev) => {
+      const next = (prev ? [...prev] : []);
+      const i = next.findIndex((p) => p.date === dateISO);
+      const weekday = weekdayName[parseISO(dateISO).getUTCDay()];
+      const toCoverage =
+        code === "clear"
+          ? { type: "none" as const }
+          : code === "A" || code === "B" || code === "both"
+            ? ({ type: "leave", who: code } as const)
+            : ({ type: "care", caregiverId: code.slice(2) } as const);
+      if (i >= 0) next[i] = { ...next[i], coverage: toCoverage };
+      else next.push({ date: dateISO, weekday, coverage: toCoverage });
+      return next;
+    });
+
     start(async () => { await setOverrideAction(dateISO, code); });
   };
 
+
   const applyPlan = () => {
     start(async () => {
-      const res = await autoPlanAndSave(); 
+      const res = await autoPlanAndSave();
       setAppliedPlan(res.plan);
     });
   };
@@ -262,6 +280,8 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
               cfg={parentA}
               color={palette[0]}
               onChange={(patch) => persistParentPrefs("A", patch)}
+              onRename={(name) => setParentA((p) => (p ? { ...p, name } : p))}
+              onRelabel={(shortLabel) => setParentA((p) => (p ? { ...p, shortLabel } : p))}
               showBankToggle
             />
           )}
@@ -271,6 +291,8 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
               cfg={parentB}
               color={palette[1]}
               onChange={(patch) => persistParentPrefs("B", patch)}
+              onRename={(name) => setParentB((p) => (p ? { ...p, name } : p))}
+              onRelabel={(shortLabel) => setParentB((p) => (p ? { ...p, shortLabel } : p))}
               showBankToggle
             />
           ) : (
@@ -294,7 +316,36 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                 >
                   {c.shortLabel || "C"}
                 </span>
-                <span className="text-sm">{c.name}</span>
+                <Input
+                  className="w-20"
+                  value={c.shortLabel ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value.toUpperCase().slice(0, 2);
+                    setCaregivers((prev) =>
+                      prev.map((x) => (x.id === c.id ? { ...x, shortLabel: v } : x))
+                    );
+                  }}
+                  onBlur={async (e) => {
+                    const v = e.target.value.toUpperCase().slice(0, 2);
+                    await updateMemberBasics(c.id, { shortLabel: v || null });
+                  }}
+                  placeholder="C"
+                />
+                <Input
+                  className="flex-1"
+                  value={c.name}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCaregivers((prev) =>
+                      prev.map((x) => (x.id === c.id ? { ...x, name: v } : x))
+                    );
+                  }}
+                  onBlur={async (e) => {
+                    const v = e.target.value.trim();
+                    await updateMemberBasics(c.id, { name: v });
+                  }}
+                  placeholder="Caregiver name"
+                />
               </li>
             ))}
           </ul>
@@ -515,12 +566,16 @@ function ParentCard({
   label,
   cfg,
   onChange,
+  onRename,
+  onRelabel,
   color,
   showBankToggle,
 }: {
   label: string;
   cfg: ParentConfigDTO;
   onChange: (patch: Partial<Pick<ParentConfigDTO, "offDays" | "allowance" | "getsBankHolidays">>) => void;
+  onRename: (name: string) => void;
+  onRelabel: (shortLabel: string) => void;
   color: string;
   showBankToggle?: boolean;
 }) {
@@ -538,11 +593,29 @@ function ParentCard({
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs" style={{ backgroundColor: color }} title={label}>
               {cfg.shortLabel || (label === "Parent A" ? "A" : "B")}
             </span>
-            <Input className="w-full sm:w-56" value={cfg.name} readOnly />
+            <Input
+              className="w-full sm:w-56"
+              value={cfg.name}
+              onChange={(e) => onRename(e.target.value)}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                onRename(v);
+                updateMemberBasics(cfg.memberId, { name: v });
+              }}
+            />
           </div>
+
           <div className="flex flex-col gap-1 w-24">
             <Label className="text-sm">Label</Label>
-            <Input value={cfg.shortLabel ?? ""} readOnly />
+            <Input
+              value={cfg.shortLabel ?? ""}
+              onChange={(e) => onRelabel(e.target.value.toUpperCase().slice(0, 2))}
+              onBlur={(e) => {
+                const v = e.target.value.toUpperCase().slice(0, 2);
+                onRelabel(v);
+                updateMemberBasics(cfg.memberId, { shortLabel: v || null });
+              }}
+            />
           </div>
         </div>
 
