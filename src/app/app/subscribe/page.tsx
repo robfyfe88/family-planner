@@ -127,10 +127,10 @@ export default function SubscribePage() {
 
     return (
         <div className="max-w-5xl mx-auto p-3 sm:p-6 space-y-5">
-                        <div className="flex items-center justify-between w-full">
-                            <HearthPlanLogo size={50} variant="app" />
-                            {session?.user && <UserMenu user={session.user} />}
-                        </div>
+            <div className="flex items-center justify-between w-full">
+                <HearthPlanLogo size={50} variant="app" />
+                {session?.user && <UserMenu user={session.user} />}
+            </div>
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Button

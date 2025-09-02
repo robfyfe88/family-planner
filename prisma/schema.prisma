@@ -49,12 +49,9 @@ model Member {
   shortLabel   String?
   color        String?
   slot         String?
-
   userId       String?    @unique
   inviteEmail  String?
-
   household    Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
-
   @@index([householdId])
   @@index([inviteEmail])
 }

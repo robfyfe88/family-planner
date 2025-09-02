@@ -42,7 +42,7 @@ export default function AddMemberCard({
         <RoleBadge role={role} />
       </div>
 
-      <div className="mb-3">
+      <div className="mb-3 mt-8">
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -85,7 +85,7 @@ export default function AddMemberCard({
           )}
         </div>
       ) : (
-        <div className="mb-3 text-xs opacity-50">No email required for children.</div>
+        <div></div>
       )}
 
       <Button

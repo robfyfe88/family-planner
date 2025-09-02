@@ -148,7 +148,7 @@ export default function MemberCard({
           )}
         </>
       ) : (
-        <div className="mt-2 text-xs opacity-50">No email needed for children.</div>
+        <div></div>
       )}
 
       <div className="absolute bottom-3 right-3 gap-4">

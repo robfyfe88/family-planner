@@ -68,6 +68,7 @@ export function UserMenu({
               e.preventDefault();
               router.push("/app/dashboard");
             }}
+            className="cursor-pointer"
           >
             <LayoutDashboard className="mr-2 h-4 w-4" />
             Dashboard
@@ -78,36 +79,28 @@ export function UserMenu({
               e.preventDefault();
               router.push("/app/profile");
             }}
+            className="cursor-pointer"
           >
             <User className="mr-2 h-4 w-4" />
             Profile
-          </DropdownMenuItem>
-
-          <DropdownMenuItem disabled className="cursor-not-allowed opacity-60">
-            <Bell className="mr-2 h-4 w-4" />
-            Notifications
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={(e) => {
               e.preventDefault();
               router.push("/app/subscribe");
             }}
+            className="cursor-pointer"
           >
             <CreditCard className="mr-2 h-4 w-4" />
             Subscription
           </DropdownMenuItem>
-          <DropdownMenuItem disabled className="cursor-not-allowed opacity-60">
-            <Cog className="mr-2 h-4 w-4" />
-            Settings
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
-
           <DropdownMenuItem
             onSelect={(e) => {
               e.preventDefault();
               signOut({ callbackUrl: "/" });
             }}
-            className="text-red-600"
+            className="text-red-600 cursor-pointer "
           >
             <LogOut className="mr-2 h-4 w-4" />
             Sign out
