@@ -414,29 +414,29 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         </div>
 
         <div className="block md:hidden">
-<MobileMonthList
-  days={monthDays}
-  parentA={parentA}
-  parentB={parentB}
-  caregivers={caregivers}
-  closureSet={closureSet}
-  planByDate={planByDate}
-  bankHolidaySet={bankHolidaySet}
-  setOverride={setOverride}
-  toggleClosure={(d) => toggleClosure(ymd(d))}
-  isToday={(d) => ymd(d) === ymd(new Date())}
-  openAddEvent={(dateISO) => {
-    setEventDraft({
-      title: "",
-      startDateISO: dateISO,
-      endDateISO: dateISO,
-      color: "#c084fc",
-      notes: "",
-      allDay: true,
-    });
-    setAddOpen(true);
-  }}
-/>
+          <MobileMonthList
+            days={monthDays}
+            parentA={parentA}
+            parentB={parentB}
+            caregivers={caregivers}
+            closureSet={closureSet}
+            planByDate={planByDate}
+            bankHolidaySet={bankHolidaySet}
+            setOverride={setOverride}
+            toggleClosure={(d) => toggleClosure(ymd(d))}
+            isToday={(d) => ymd(d) === ymd(new Date())}
+            openAddEvent={(dateISO) => {
+              setEventDraft({
+                title: "",
+                startDateISO: dateISO,
+                endDateISO: dateISO,
+                color: "#c084fc",
+                notes: "",
+                allDay: true,
+              });
+              setAddOpen(true);
+            }}
+          />
         </div>
 
         <div className="hidden md:block">
@@ -924,7 +924,7 @@ function MobileMonthList({
 
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-onClick={() => openAddEvent(id)}
+                  onClick={() => openAddEvent(id)}
                 >
                   <Plus className="h-4 w-4 mr-2" /> Add holiday event here
                 </DropdownMenuItem>

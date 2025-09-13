@@ -131,156 +131,170 @@ const fromDbRegion = (r: string): Region =>
 /* =========================
    READ + AGGREGATE
    ========================= */
-
 export async function fetchAnnualData(): Promise<AnnualData> {
-    const householdId = await getHouseholdIdOrThrow();
+  const householdId = await getHouseholdIdOrThrow();
 
-    const settings = await prisma.annualSettings.upsert({
-        where: { householdId },
-        update: {},
-        create: { householdId },
-    });
+  const settings = await prisma.annualSettings.upsert({
+    where: { householdId },
+    update: {},
+    create: { householdId },
+  });
 
-    const members = await prisma.member.findMany({
-        where: { householdId },
-        select: { id: true, name: true, role: true, shortLabel: true, color: true },
-        orderBy: { name: "asc" },
-    });
+  const members = await prisma.member.findMany({
+    where: { householdId },
+    select: { id: true, name: true, role: true, shortLabel: true, color: true },
+    orderBy: { name: "asc" },
+  });
 
-    const parents = members.filter((m) => m.role === "parent").slice(0, 2);
-    const caregivers = members.filter((m) => m.role === "caregiver");
+  const parents = members.filter((m) => m.role === "parent").slice(0, 2);
+  const caregivers = members.filter((m) => m.role === "caregiver");
 
-    const leaves = await prisma.leave.findMany({
-        where: { householdId },
-        select: { memberId: true, startDate: true, endDate: true, type: true },
-    });
+  // Pull all leave rows up-front
+  const leaves = await prisma.leave.findMany({
+    where: { householdId },
+    select: { memberId: true, startDate: true, endDate: true, type: true },
+  });
 
-    // NEW: index watch overrides (single-day rows you’ll write in setOverride)
-    const watchOverrides = leaves.filter(L => L.type === "annual_watch_override");
-    const normalLeaves = leaves.filter(L => L.type !== "annual_watch_override");
+  // Stable parent IDs (avoid referencing DTOs before they exist)
+  const parentAId = parents[0]?.id ?? null;
+  const parentBId = parents[1]?.id ?? null;
 
-    const watchAOn = new Set(
-        watchOverrides
-            .filter(L => parentDTOs[0] && L.memberId === parentDTOs[0].memberId)
-            .map(L => ymd(L.startDate)) // they’re single-day rows, start==end
-    );
-    const watchBOn = new Set(
-        watchOverrides
-            .filter(L => parentDTOs[1] && L.memberId === parentDTOs[1].memberId)
-            .map(L => ymd(L.startDate))
-    );
+  // Watch overrides are single-day rows that mean "can cover without leave"
+  const watchOverrides = await prisma.leave.findMany({
+    where: { householdId, type: "watch_override" },
+    select: { memberId: true, startDate: true }, // single-day: start==end
+  });
 
-    const prefsRows = await prisma.parentPrefs.findMany({
-        where: { memberId: { in: parents.map((p) => p.id) } },
-        select: {
-            memberId: true,
-            offDaysBitmask: true,
-            allowanceDays: true,
-            getsBankHolidays: true,
-            // NEW
-            watchDaysBitmask: true,
-        },
-    });
-    const prefByMember = new Map<string, ParentPrefsRow>(prefsRows.map((r) => [r.memberId, r]));
+  // Normal leaves count for coverage checks; exclude watch overrides
+  const normalLeaves = leaves.filter((L) => L.type !== "watch_override");
 
-    const parentDTOs: ParentConfigDTO[] = parents.map((p, idx) => {
-        const pref = prefByMember.get(p.id);
-        return {
-            memberId: p.id,
-            name: p.name,
-            shortLabel: p.shortLabel ?? (idx === 0 ? "A" : "B"),
-            color: p.color,
-            offDays: daysFromBitmask(pref?.offDaysBitmask ?? 0),
-            allowance: pref?.allowanceDays ?? 20,
-            getsBankHolidays: !!pref?.getsBankHolidays,
-            watchDays: daysFromBitmask(pref?.watchDaysBitmask ?? 0),
-        };
-    });
+  // Quick lookup sets (ISO y-m-d) for watch days per parent
+  const watchAOn = new Set(
+    watchOverrides
+      .filter((L) => parentAId && L.memberId === parentAId)
+      .map((L) => ymd(L.startDate))
+  );
+  const watchBOn = new Set(
+    watchOverrides
+      .filter((L) => parentBId && L.memberId === parentBId)
+      .map((L) => ymd(L.startDate))
+  );
 
-    const caregiverDTOs: CaregiverDTO[] = caregivers.map((c) => ({
-        id: c.id,
-        name: c.name,
-        shortLabel: c.shortLabel,
-        color: c.color,
-    }));
+  // Parent prefs (including recurring watchDays bitmask)
+  const prefsRows = await prisma.parentPrefs.findMany({
+    where: { memberId: { in: parents.map((p) => p.id) } },
+    select: {
+      memberId: true,
+      offDaysBitmask: true,
+      allowanceDays: true,
+      getsBankHolidays: true,
+      watchDaysBitmask: true,
+    },
+  });
+  const prefByMember = new Map(prefsRows.map((r) => [r.memberId, r]));
 
-    const closures = await prisma.schoolDay.findMany({
-        where: { householdId, isSchoolOpen: false },
-        select: { date: true },
-        orderBy: { date: "asc" },
-    });
-    const closureISO = closures.map((row) => ymd(row.date));
-
-    const care = await prisma.careAssignment.findMany({
-        where: { householdId },
-        select: { date: true, caregiverId: true },
-    });
-
-
-
-    // NEW: holiday events
-    const holidayEventsRows = await prisma.holidayEvent.findMany({
-        where: { householdId },
-        orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
-    });
-    const holidayEvents: HolidayEventDTO[] = holidayEventsRows.map((e: { id: any; title: any; startDate: Date; endDate: Date; color: any; notes: any; allDay: any; }) => ({
-        id: e.id,
-        title: e.title,
-        startDate: ymd(e.startDate),
-        endDate: ymd(e.endDate),
-        color: e.color ?? null,
-        notes: e.notes ?? null,
-        allDay: e.allDay,
-    }));
-
-    const parentA = parentDTOs[0];
-    const parentB = parentDTOs[1];
-
-    const plan: DayPlanDTO[] = closureISO.map((date) => {
-        const d = parseISO(date);
-        const w = d.getUTCDay() as Weekday;
-
-        const coveredByA = Boolean(
-            parentA &&
-            normalLeaves.some(L => L.memberId === parentA.memberId && d >= L.startDate && d <= L.endDate)
-        );
-        const coveredByB = Boolean(
-            parentB &&
-            normalLeaves.some(L => L.memberId === parentB.memberId && d >= L.startDate && d <= L.endDate)
-        );
-
-        const careRow = care.find((c) => ymd(c.date) === date);
-
-        // NEW: per-day watch via override OR recurring watchDays
-        const watchA = !!parentA && (watchAOn.has(date) || parentA.watchDays.includes(w));
-        const watchB = !!parentB && (watchBOn.has(date) || parentB.watchDays.includes(w));
-
-        let coverage: DayPlanDTO["coverage"] = { type: "none" };
-
-        if (coveredByA && coveredByB) coverage = { type: "leave", who: "both" };
-        else if (coveredByA) coverage = { type: "leave", who: "A" };
-        else if (coveredByB) coverage = { type: "leave", who: "B" };
-        else if (careRow) coverage = { type: "care", caregiverId: careRow.caregiverId };
-        else if (watchA && watchB) coverage = { type: "off", who: "both" };
-        else if (watchA) coverage = { type: "off", who: "A" };
-        else if (watchB) coverage = { type: "off", who: "B" };
-
-        return { date, weekday: weekdayName[w], coverage };
-    });
+  const parentDTOs: ParentConfigDTO[] = parents.map((p, idx) => {
+    const pref = prefByMember.get(p.id);
     return {
-        settings: {
-            region: fromDbRegion(settings.region),
-            skipWeekends: settings.skipWeekends,
-            jointDays: settings.jointDays,
-            prioritizeSeasons: settings.prioritizeSeasons,
-        },
-        parents: parentDTOs,
-        caregivers: caregiverDTOs,
-        closures: closureISO,
-        plan,
-        holidayEvents,
+      memberId: p.id,
+      name: p.name,
+      shortLabel: p.shortLabel ?? (idx === 0 ? "A" : "B"),
+      color: p.color,
+      offDays: daysFromBitmask(pref?.offDaysBitmask ?? 0),
+      allowance: pref?.allowanceDays ?? 20,
+      getsBankHolidays: !!pref?.getsBankHolidays,
+      watchDays: daysFromBitmask(pref?.watchDaysBitmask ?? 0),
     };
+  });
+
+  const caregiverDTOs: CaregiverDTO[] = caregivers.map((c) => ({
+    id: c.id,
+    name: c.name,
+    shortLabel: c.shortLabel,
+    color: c.color,
+  }));
+
+  const closures = await prisma.schoolDay.findMany({
+    where: { householdId, isSchoolOpen: false },
+    select: { date: true },
+    orderBy: { date: "asc" },
+  });
+  const closureISO = closures.map((row) => ymd(row.date));
+
+  const care = await prisma.careAssignment.findMany({
+    where: { householdId },
+    select: { date: true, caregiverId: true },
+  });
+
+  // Holiday events for the planner sidebar/dialogs
+  const holidayEventsRows = await prisma.holidayEvent.findMany({
+    where: { householdId },
+    orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
+  });
+  const holidayEvents: HolidayEventDTO[] = holidayEventsRows.map((e) => ({
+    id: e.id,
+    title: e.title,
+    startDate: ymd(e.startDate),
+    endDate: ymd(e.endDate),
+    color: e.color ?? null,
+    notes: e.notes ?? null,
+    allDay: e.allDay,
+  }));
+
+  const parentA = parentDTOs[0];
+  const parentB = parentDTOs[1];
+
+  const plan: DayPlanDTO[] = closureISO.map((date) => {
+    const d = parseISO(date);
+    const w = d.getUTCDay() as Weekday;
+
+    const coveredByA = Boolean(
+      parentA &&
+        normalLeaves.some(
+          (L) => L.memberId === parentA.memberId && d >= L.startDate && d <= L.endDate
+        )
+    );
+    const coveredByB = Boolean(
+      parentB &&
+        normalLeaves.some(
+          (L) => L.memberId === parentB.memberId && d >= L.startDate && d <= L.endDate
+        )
+    );
+
+    const careRow = care.find((c) => ymd(c.date) === date);
+
+    // Per-day watch via override OR recurring watchDays
+    const watchA = !!parentA && (watchAOn.has(date) || parentA.watchDays.includes(w));
+    const watchB = !!parentB && (watchBOn.has(date) || parentB.watchDays.includes(w));
+
+    let coverage: DayPlanDTO["coverage"] = { type: "none" };
+
+    if (coveredByA && coveredByB) coverage = { type: "leave", who: "both" };
+    else if (coveredByA) coverage = { type: "leave", who: "A" };
+    else if (coveredByB) coverage = { type: "leave", who: "B" };
+    else if (careRow) coverage = { type: "care", caregiverId: careRow.caregiverId };
+    else if (watchA && watchB) coverage = { type: "off", who: "both" };
+    else if (watchA) coverage = { type: "off", who: "A" };
+    else if (watchB) coverage = { type: "off", who: "B" };
+
+    return { date, weekday: weekdayName[w], coverage };
+  });
+
+  return {
+    settings: {
+      region: fromDbRegion(settings.region),
+      skipWeekends: settings.skipWeekends,
+      jointDays: settings.jointDays,
+      prioritizeSeasons: settings.prioritizeSeasons,
+    },
+    parents: parentDTOs,
+    caregivers: caregiverDTOs,
+    closures: closureISO,
+    plan,
+    holidayEvents,
+  };
 }
+
 
 /* =========================
    BASIC MUTATIONS
@@ -360,89 +374,89 @@ export async function toggleClosure(dateISO: string) {
 }
 
 export async function setOverride(dateISO: string, code: OverrideCode) {
-  const householdId = await getHouseholdIdOrThrow();
-  const date = parseISO(dateISO);
+    const householdId = await getHouseholdIdOrThrow();
+    const date = parseISO(dateISO);
 
-  const parents = await prisma.member.findMany({
-    where: { householdId, role: "parent" },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-    take: 2,
-  });
-  const parentA = parents[0];
-  const parentB = parents[1];
+    const parents = await prisma.member.findMany({
+        where: { householdId, role: "parent" },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+        take: 2,
+    });
+    const parentA = parents[0];
+    const parentB = parents[1];
 
-  // clear any manual care + both kinds of leave overrides for that day
-  await prisma.careAssignment.deleteMany({
-    where: { householdId, date, isAuto: false },
-  });
-  await prisma.leave.deleteMany({
-    where: {
-      householdId,
-      startDate: date,
-      endDate: date,
-      type: { in: ["annual_override", "annual_watch_override"] }, // NEW: clear watch overrides too
-    },
-  });
+    // clear any manual care + both kinds of leave overrides for that day
+    await prisma.careAssignment.deleteMany({
+        where: { householdId, date, isAuto: false },
+    });
+    await prisma.leave.deleteMany({
+        where: {
+            householdId,
+            startDate: date,
+            endDate: date,
+            type: { in: ["annual_override", "annual_watch_override"] }, // NEW: clear watch overrides too
+        },
+    });
 
-  if (code === "clear") return;
+    if (code === "clear") return;
 
-  // existing leave overrides
-  if (code === "A" && parentA) {
-    await prisma.leave.create({
-      data: { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_override" },
-    });
-    return;
-  }
-  if (code === "B" && parentB) {
-    await prisma.leave.create({
-      data: { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_override" },
-    });
-    return;
-  }
-  if (code === "both" && parentA && parentB) {
-    await prisma.leave.createMany({
-      data: [
-        { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_override" },
-        { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_override" },
-      ],
-    });
-    return;
-  }
+    // existing leave overrides
+    if (code === "A" && parentA) {
+        await prisma.leave.create({
+            data: { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_override" },
+        });
+        return;
+    }
+    if (code === "B" && parentB) {
+        await prisma.leave.create({
+            data: { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_override" },
+        });
+        return;
+    }
+    if (code === "both" && parentA && parentB) {
+        await prisma.leave.createMany({
+            data: [
+                { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_override" },
+                { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_override" },
+            ],
+        });
+        return;
+    }
 
-  // NEW: per-day "off" (watch) overrides – do NOT deduct allowance anywhere
-  if (code === "off:A" && parentA) {
-    await prisma.leave.create({
-      data: { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_watch_override" },
-    });
-    return;
-  }
-  if (code === "off:B" && parentB) {
-    await prisma.leave.create({
-      data: { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_watch_override" },
-    });
-    return;
-  }
-  if (code === "off:both" && parentA && parentB) {
-    await prisma.leave.createMany({
-      data: [
-        { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_watch_override" },
-        { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_watch_override" },
-      ],
-    });
-    return;
-  }
+    // NEW: per-day "off" (watch) overrides – do NOT deduct allowance anywhere
+    if (code === "off:A" && parentA) {
+        await prisma.leave.create({
+            data: { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_watch_override" },
+        });
+        return;
+    }
+    if (code === "off:B" && parentB) {
+        await prisma.leave.create({
+            data: { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_watch_override" },
+        });
+        return;
+    }
+    if (code === "off:both" && parentA && parentB) {
+        await prisma.leave.createMany({
+            data: [
+                { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_watch_override" },
+                { householdId, memberId: parentB.id, startDate: date, endDate: date, type: "annual_watch_override" },
+            ],
+        });
+        return;
+    }
 
-  // care override (unchanged)
-  if (code.startsWith("C:")) {
-    const caregiverId = code.slice(2);
-    await prisma.careAssignment.upsert({
-      where: { householdId_date_caregiverId: { householdId, date, caregiverId } },
-      create: { householdId, date, caregiverId, isAuto: false },
-      update: {},
-    });
-    return;
-  }
+    // care override (unchanged)
+    if (code.startsWith("C:")) {
+        const caregiverId = code.slice(2);
+        await prisma.careAssignment.upsert({
+            where: { householdId_date_caregiverId: { householdId, date, caregiverId } },
+            create: { householdId, date, caregiverId, isAuto: false },
+            update: {},
+        });
+        return;
+    }
 }
 
 
