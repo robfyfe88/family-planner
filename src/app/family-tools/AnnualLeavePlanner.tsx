@@ -4,14 +4,27 @@ import * as React from "react";
 import { useMemo, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BrushCleaning, CalendarCog, Settings } from "lucide-react";
+import { BrushCleaning, CalendarCog, Plus, Settings } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 import {
   updateAnnualSettings,
@@ -21,11 +34,17 @@ import {
   autoPlanAndSave,
   clearAutoPlan,
   updateMemberBasics,
+  createHolidayEvent,
 } from "../app/annual/actions";
 
+// ---------- types ----------
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type Region = "england-and-wales" | "scotland" | "northern-ireland";
-export type OverrideCode = "A" | "B" | "both" | `C:${string}` | "clear";
+export type OverrideCode =
+  | "A" | "B" | "both"
+  | `C:${string}`
+  | "off:A" | "off:B" | "off:both"
+  | "clear";
 
 type CoverageDTO =
   | { type: "none" }
@@ -52,14 +71,36 @@ type CaregiverDTO = {
   color: string | null;
 };
 
+type HolidayEventDTO = {
+  id: string;
+  title: string;
+  startDate: string; // ISO yyyy-mm-dd
+  endDate: string;   // ISO yyyy-mm-dd
+  color: string | null;
+  notes: string | null;
+  allDay: boolean;
+};
+
 type AnnualData = {
   settings: { region: Region; skipWeekends: boolean; jointDays: number; prioritizeSeasons: boolean };
   parents: ParentConfigDTO[];
   caregivers: CaregiverDTO[];
   closures: string[];
   plan: DayPlanDTO[];
+  holidayEvents: HolidayEventDTO[]; // NEW
 };
 
+// quick-add draft
+type EventDraft = {
+  title: string;
+  startDateISO: string;
+  endDateISO: string;
+  color?: string | null;
+  notes?: string | null;
+  allDay: boolean;
+};
+
+// ---------- utils ----------
 const weekdayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const palette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6D4", "#84CC16"];
 
@@ -101,6 +142,7 @@ async function fetchBankHolidays(): Promise<{
   };
 }
 
+// ---------- component ----------
 export default function AnnualLeavePlanner({ initial }: { initial: AnnualData }) {
   const [isPending, start] = useTransition();
 
@@ -110,6 +152,11 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
   const [caregivers, setCaregivers] = React.useState<CaregiverDTO[]>(initial.caregivers);
   const [closures, setClosures] = React.useState<string[]>(initial.closures);
   const [appliedPlan, setAppliedPlan] = React.useState<DayPlanDTO[] | null>(initial.plan ?? null);
+
+  // NEW: holiday events
+  const [holidayEvents, setHolidayEvents] = React.useState<HolidayEventDTO[]>(initial.holidayEvents ?? []);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [eventDraft, setEventDraft] = React.useState<EventDraft | null>(null);
 
   const [anchor, setAnchor] = React.useState(() => new Date());
   const { cells } = useMemo(() => buildMonthMatrix(anchor), [anchor]);
@@ -140,7 +187,10 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     start(async () => { await updateAnnualSettings(next); });
   };
 
-  const persistParentPrefs = (which: "A" | "B", patch: Partial<Pick<ParentConfigDTO, "offDays" | "allowance" | "getsBankHolidays">>) => {
+  const persistParentPrefs = (
+    which: "A" | "B",
+    patch: Partial<Pick<ParentConfigDTO, "offDays" | "allowance" | "getsBankHolidays">>
+  ) => {
     const current = which === "A" ? parentA : parentB;
     if (!current) return;
     const next = { ...current, ...patch };
@@ -176,12 +226,18 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
       const next = (prev ? [...prev] : []);
       const i = next.findIndex((p) => p.date === dateISO);
       const weekday = weekdayName[parseISO(dateISO).getUTCDay()];
-      const toCoverage =
+      const toCoverage: CoverageDTO =
         code === "clear"
-          ? { type: "none" as const }
+          ? { type: "none" }
           : code === "A" || code === "B" || code === "both"
             ? ({ type: "leave", who: code } as const)
-            : ({ type: "care", caregiverId: code.slice(2) } as const);
+            : code === "off:A"
+              ? ({ type: "off", who: "A" } as const)
+              : code === "off:B"
+                ? ({ type: "off", who: "B" } as const)
+                : code === "off:both"
+                  ? ({ type: "off", who: "both" } as const)
+                  : ({ type: "care", caregiverId: (code as `C:${string}`).slice(2) } as const);
       if (i >= 0) next[i] = { ...next[i], coverage: toCoverage };
       else next.push({ date: dateISO, weekday, coverage: toCoverage });
       return next;
@@ -189,7 +245,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
     start(async () => { await setOverrideAction(dateISO, code); });
   };
-
 
   const applyPlan = () => {
     start(async () => {
@@ -245,9 +300,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
   const stats = useMemo(() => {
     if (!appliedPlan) {
-      const closedOnWeekdays = closures
-        .map(parseISO)
-        .filter((d) => !settings.skipWeekends || !isWeekend(d)).length;
+      const closedOnWeekdays = closures.map(parseISO).filter((d) => !isWeekend(d)).length;
       return {
         usedA: 0,
         usedB: 0,
@@ -266,7 +319,14 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
       remainingB: Math.max(0, (parentB?.allowance ?? 0) - usedB),
       stillUncovered,
     };
-  }, [appliedPlan, closures, settings.skipWeekends, parentA?.allowance, parentB?.allowance]);
+  }, [appliedPlan, closures, parentA?.allowance, parentB?.allowance]);
+
+  // helper: date covered by any holiday event?
+  const hasHolidayEvent = React.useCallback(
+    (id: string) =>
+      holidayEvents.some((e) => id >= e.startDate && id <= e.endDate),
+    [holidayEvents]
+  );
 
   return (
     <div className="space-y-6">
@@ -302,85 +362,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
           )}
         </div>
 
-        <div className="space-y-2">
-          <div className="text-sm font-medium">Additional caregivers (for overrides)</div>
-          <div className="text-xs opacity-70">Manage caregivers in Members. They don’t use leave but can cover days via overrides.</div>
-          <ul className="flex flex-col gap-2">
-            {caregivers.length === 0 && <li className="text-sm opacity-70">No caregivers added.</li>}
-            {caregivers.map((c, i) => (
-              <li key={c.id} className="flex items-center gap-2">
-                <span
-                  className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs"
-                  style={{ backgroundColor: c.color ?? palette[(i + 2) % palette.length] }}
-                  title="Badge colour"
-                >
-                  {c.shortLabel || "C"}
-                </span>
-                <Input
-                  className="w-20"
-                  value={c.shortLabel ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value.toUpperCase().slice(0, 2);
-                    setCaregivers((prev) =>
-                      prev.map((x) => (x.id === c.id ? { ...x, shortLabel: v } : x))
-                    );
-                  }}
-                  onBlur={async (e) => {
-                    const v = e.target.value.toUpperCase().slice(0, 2);
-                    await updateMemberBasics(c.id, { shortLabel: v || null });
-                  }}
-                  placeholder="C"
-                />
-                <Input
-                  className="flex-1"
-                  value={c.name}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setCaregivers((prev) =>
-                      prev.map((x) => (x.id === c.id ? { ...x, name: v } : x))
-                    );
-                  }}
-                  onBlur={async (e) => {
-                    const v = e.target.value.trim();
-                    await updateMemberBasics(c.id, { name: v });
-                  }}
-                  placeholder="Caregiver name"
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div className="flex flex-col gap-1">
-            <Label className="text-sm">Joint days (both off together)</Label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              className="no-spinners"
-              value={settings.jointDays}
-              min={0}
-              onChange={(e) => {
-                const v = parseInt(e.target.value || "0", 10);
-                if (Number.isFinite(v)) persistSettings({ jointDays: Math.max(0, v) });
-              }}
-              onFocus={(e) => e.currentTarget.select()}
-              onMouseUp={(e) => e.preventDefault()}
-              disabled={!parentB}
-              title={!parentB ? "Requires two parents" : ""}
-            />
-            <span className="text-xs opacity-70">Christmas & Summer prioritised.</span>
-          </div>
-
-          <label className="flex items-center gap-2">
-            <Checkbox
-              id="skip-weekends"
-              checked={settings.skipWeekends}
-              onCheckedChange={(v) => persistSettings({ skipWeekends: !!v })}
-            />
-            <span className="text-sm">Skip weekends</span>
-          </label>
-
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div className="flex flex-col gap-1">
             <Label className="text-sm">Bank holiday region</Label>
             <Select value={settings.region} onValueChange={(v: Region) => persistSettings({ region: v })}>
@@ -393,7 +375,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
             </Select>
           </div>
 
-          <div className="flex gap-2 w-full md:justify-end">
+          <div className="flex gap-2 w-full md:justify-end md:col-span-2">
             <Button onClick={applyPlan} disabled={isPending} className="whitespace-nowrap">
               <CalendarCog className="mr-2 h-4 w-4" />
               Auto-Plan
@@ -405,7 +387,20 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
           </div>
         </div>
       </section>
-
+      <section className="card">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Stat label={`${parentA?.name ?? "Parent A"} leave used`} value={`${stats.usedA} d`} />
+          {parentB && <Stat label={`${parentB.name} leave used`} value={`${stats.usedB} d`} />}
+          <Stat label={`${parentA?.name ?? "Parent A"} remaining`} value={`${stats.remainingA} d`} />
+          {parentB && <Stat label={`${parentB.name} remaining`} value={`${stats.remainingB} d`} />}
+          <Stat label={`Uncovered days`} value={`${stats.stillUncovered} d`} />
+        </div>
+        {!appliedPlan && (
+          <p className="text-xs opacity-70 mt-2">
+            Press <strong>Auto-Plan</strong> to allocate leave.
+          </p>
+        )}
+      </section>
       <section className="card">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
@@ -419,18 +414,29 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         </div>
 
         <div className="block md:hidden">
-          <MobileMonthList
-            days={monthDays}
-            parentA={parentA}
-            parentB={parentB}
-            caregivers={caregivers}
-            closureSet={closureSet}
-            planByDate={planByDate}
-            bankHolidaySet={bankHolidaySet}
-            setOverride={setOverride}
-            toggleClosure={(d) => toggleClosure(ymd(d))}
-            isToday={(d) => ymd(d) === ymd(new Date())}
-          />
+<MobileMonthList
+  days={monthDays}
+  parentA={parentA}
+  parentB={parentB}
+  caregivers={caregivers}
+  closureSet={closureSet}
+  planByDate={planByDate}
+  bankHolidaySet={bankHolidaySet}
+  setOverride={setOverride}
+  toggleClosure={(d) => toggleClosure(ymd(d))}
+  isToday={(d) => ymd(d) === ymd(new Date())}
+  openAddEvent={(dateISO) => {
+    setEventDraft({
+      title: "",
+      startDateISO: dateISO,
+      endDateISO: dateISO,
+      color: "#c084fc",
+      notes: "",
+      allDay: true,
+    });
+    setAddOpen(true);
+  }}
+/>
         </div>
 
         <div className="hidden md:block">
@@ -467,6 +473,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
               }
 
               const closed = closureSet.has(id);
+              const hasEvent = hasHolidayEvent(id);
 
               return (
                 <div
@@ -480,7 +487,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                     ${closed ? "bg-[rgba(167,216,222,0.15)]" : ""}
                     ${isToday(d) ? "ring-1 ring-[var(--accent-2)]" : ""}
                     ${highlight ? "outline outline-2 outline-[var(--accent-2)]" : ""}`}
-                  title={`${id}${closed ? " • school closed" : ""}${isBH ? " • bank holiday" : ""}`}
+                  title={`${id}${closed ? " • school closed" : ""}${isBH ? " • bank holiday" : ""}${hasEvent ? " • holiday event" : ""}`}
                   style={{
                     boxShadow: isBH ? "inset 0 0 0 2px rgba(59,130,246,0.6)" : undefined,
                     borderTop: plan?.coverage.type === "none" && closed ? "3px solid rgba(239,68,68,0.6)" : undefined,
@@ -489,6 +496,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                 >
                   <div className="text-xs mb-1 flex items-center justify-between">
                     <span className={`px-1.5 py-0.5 rounded ${within ? "" : "opacity-60"}`}>{d.getDate()}</span>
+
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -500,12 +508,18 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                           <Settings />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuLabel>Override ({id})</DropdownMenuLabel>
+                      <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuLabel>Actions ({id})</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         {parentA && <DropdownMenuItem onClick={() => setOverride(id, "A")}>{parentA.name} leave</DropdownMenuItem>}
                         {parentB && <DropdownMenuItem onClick={() => setOverride(id, "B")}>{parentB.name} leave</DropdownMenuItem>}
                         {parentA && parentB && <DropdownMenuItem onClick={() => setOverride(id, "both")}>Both leave</DropdownMenuItem>}
+
+                        <DropdownMenuSeparator />
+                        {parentA && <DropdownMenuItem onClick={() => setOverride(id, "off:A")}>Mark {parentA.name} off (no leave)</DropdownMenuItem>}
+                        {parentB && <DropdownMenuItem onClick={() => setOverride(id, "off:B")}>Mark {parentB.name} off (no leave)</DropdownMenuItem>}
+                        {parentA && parentB && <DropdownMenuItem onClick={() => setOverride(id, "off:both")}>Mark both off (no leave)</DropdownMenuItem>}
+
                         {caregivers.length > 0 && (
                           <>
                             <DropdownMenuSeparator />
@@ -517,6 +531,24 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                             ))}
                           </>
                         )}
+
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setEventDraft({
+                              title: "",
+                              startDateISO: id,
+                              endDateISO: id,
+                              color: "#c084fc",
+                              notes: "",
+                              allDay: true,
+                            });
+                            setAddOpen(true);
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-2" /> Add holiday event here
+                        </DropdownMenuItem>
+
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => setOverride(id, "clear")}>Clear override</DropdownMenuItem>
                       </DropdownMenuContent>
@@ -525,9 +557,15 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
                   <div className="flex flex-wrap gap-1">{chips}</div>
 
-                  <div className="absolute left-2 bottom-2 flex gap-2 text-[10px]">
+                  <div className="absolute left-2 bottom-2 flex items-center gap-2 text-[10px]">
                     {closed && <span className="opacity-70">School closed</span>}
                     {isBH && <span className="opacity-70">Bank hol.</span>}
+                    {hasEvent && (
+                      <span className="inline-flex items-center gap-1 opacity-80">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#c084fc" }} />
+                        Holiday event
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -540,24 +578,107 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
           <span className="badge badge-teal">Weekly day off / Bank hol. off</span>
           <span className="badge badge-pink">Allocated leave</span>
           <span className="px-2 py-0.5 rounded-full border border-red-400 text-red-600">Uncovered</span>
-          <span className="ml-auto">{isPending ? "Saving…" : "Tap to toggle • ⚙ override"}</span>
+          <span className="ml-auto">{isPending ? "Saving…" : "Tap to toggle • ⚙ override • ＋ add event"}</span>
         </div>
       </section>
 
-      <section className="card">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Stat label={`${parentA?.name ?? "Parent A"} leave used`} value={`${stats.usedA} d`} />
-          {parentB && <Stat label={`${parentB.name} leave used`} value={`${stats.usedB} d`} />}
-          <Stat label={`${parentA?.name ?? "Parent A"} remaining`} value={`${stats.remainingA} d`} />
-          {parentB && <Stat label={`${parentB.name} remaining`} value={`${stats.remainingB} d`} />}
-          <Stat label={`Uncovered days`} value={`${stats.stillUncovered} d`} />
-        </div>
-        {!appliedPlan && (
-          <p className="text-xs opacity-70 mt-2">
-            Press <strong>Auto-Plan</strong> to allocate leave (Christmas & Summer first, block-wise).
-          </p>
-        )}
-      </section>
+
+
+      {/* Add Holiday Event Dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add holiday event</DialogTitle>
+            <DialogDescription>Quickly add an all-day holiday/event to your household calendar.</DialogDescription>
+          </DialogHeader>
+
+          {eventDraft && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <Label>Title</Label>
+                  <Input
+                    value={eventDraft.title}
+                    onChange={(e) => setEventDraft({ ...eventDraft, title: e.target.value })}
+                    placeholder="e.g. Grandparents visit"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label>Color</Label>
+                  <Input
+                    type="text"
+                    value={eventDraft.color ?? ""}
+                    onChange={(e) => setEventDraft({ ...eventDraft, color: e.target.value })}
+                    placeholder="#c084fc"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <Label>Start</Label>
+                  <Input
+                    type="date"
+                    value={eventDraft.startDateISO}
+                    onChange={(e) => setEventDraft({ ...eventDraft, startDateISO: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label>End</Label>
+                  <Input
+                    type="date"
+                    value={eventDraft.endDateISO}
+                    onChange={(e) => setEventDraft({ ...eventDraft, endDateISO: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="allDay"
+                  checked={!!eventDraft.allDay}
+                  onCheckedChange={(v) => setEventDraft({ ...eventDraft, allDay: !!v })}
+                />
+                <Label htmlFor="allDay">All day</Label>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <Label>Notes</Label>
+                <Textarea
+                  rows={3}
+                  value={eventDraft.notes ?? ""}
+                  onChange={(e) => setEventDraft({ ...eventDraft, notes: e.target.value })}
+                  placeholder="Optional details…"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!eventDraft) return;
+                const payload = {
+                  title: eventDraft.title.trim() || "Holiday",
+                  startDateISO: eventDraft.startDateISO,
+                  endDateISO: eventDraft.endDateISO || eventDraft.startDateISO,
+                  color: eventDraft.color ?? null,
+                  notes: eventDraft.notes ?? null,
+                  allDay: !!eventDraft.allDay,
+                };
+                start(async () => {
+                  const created = await createHolidayEvent(payload);
+                  setHolidayEvents((prev) => [...prev, created].sort((a, b) => (a.startDate < b.startDate ? -1 : 1)));
+                  setAddOpen(false);
+                });
+              }}
+            >
+              Save event
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -685,7 +806,7 @@ function MonthPicker({ anchor, onChange }: { anchor: Date; onChange: (d: Date) =
         onChange={(e) => { const v = parseInt(e.target.value, 10); if (!Number.isNaN(v)) setY(v); }}
         onFocus={(e) => e.currentTarget.select()} onMouseUp={(e) => e.preventDefault()}
       />
-      <Button variant="outline" onClick={() => onChange(new Date(y, m, 1))}>Go</Button>
+
     </div>
   );
 }
@@ -719,6 +840,7 @@ function MobileMonthList({
   setOverride,
   toggleClosure,
   isToday,
+  openAddEvent,                // ← NEW
 }: {
   days: Date[];
   parentA: ParentConfigDTO | null;
@@ -730,6 +852,7 @@ function MobileMonthList({
   setOverride: (id: string, code: OverrideCode) => void;
   toggleClosure: (d: Date) => void;
   isToday: (d: Date) => boolean;
+  openAddEvent: (dateISO: string) => void;  // ← NEW
 }) {
   const rows = days.map((d) => {
     const id = ymd(d);
@@ -757,7 +880,6 @@ function MobileMonthList({
 
     const closed = closureSet.has(id);
     const weekday = weekdayName[w];
-
     return (
       <div
         key={id}
@@ -789,22 +911,24 @@ function MobileMonthList({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Override ({id})</DropdownMenuLabel>
+                <DropdownMenuLabel>Actions ({id})</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {parentA && <DropdownMenuItem onClick={() => setOverride(id, "A")}>{parentA.name} leave</DropdownMenuItem>}
                 {parentB && <DropdownMenuItem onClick={() => setOverride(id, "B")}>{parentB.name} leave</DropdownMenuItem>}
                 {parentA && parentB && <DropdownMenuItem onClick={() => setOverride(id, "both")}>Both leave</DropdownMenuItem>}
-                {caregivers.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator />
-                    {caregivers.map((c) => (
-                      <DropdownMenuItem key={c.id} onClick={() => setOverride(id, `C:${c.id}`)}>
-                        <span className="inline-block w-3 h-3 rounded mr-2" style={{ backgroundColor: c.color ?? "#94a3b8" }} />
-                        {c.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
+
+                <DropdownMenuSeparator />
+                {parentA && <DropdownMenuItem onClick={() => setOverride(id, "off:A")}>Mark {parentA.name} off (no leave)</DropdownMenuItem>}
+                {parentB && <DropdownMenuItem onClick={() => setOverride(id, "off:B")}>Mark {parentB.name} off (no leave)</DropdownMenuItem>}
+                {parentA && parentB && <DropdownMenuItem onClick={() => setOverride(id, "off:both")}>Mark both off (no leave)</DropdownMenuItem>}
+
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+onClick={() => openAddEvent(id)}
+                >
+                  <Plus className="h-4 w-4 mr-2" /> Add holiday event here
+                </DropdownMenuItem>
+
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setOverride(id, "clear")}>Clear override</DropdownMenuItem>
               </DropdownMenuContent>

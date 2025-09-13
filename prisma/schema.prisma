@@ -8,6 +8,23 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
+model HolidayEvent {
+  id          String   @id @default(cuid())
+  householdId String
+  title       String
+  startDate   DateTime
+  endDate     DateTime
+  color       String?
+  notes       String?
+  allDay      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  household Household @relation("HouseholdHolidayEvents", fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, startDate])
+}
+
 model Household {
   id                   String             @id @default(cuid())
   name                 String
@@ -45,6 +62,8 @@ model Household {
 
   annualSettings  AnnualSettings?
   careAssignments CareAssignment[]
+
+  holidayEvents HolidayEvent[] @relation("HouseholdHolidayEvents")
 }
 
 model Member {
@@ -82,11 +101,11 @@ model AnnualSettings {
 }
 
 model ParentPrefs {
-  // one row per *parent* member
   memberId         String  @id
-  offDaysBitmask   Int     @default(0) // Sun..Sat -> bits 0..6
+  offDaysBitmask   Int     @default(0)
   allowanceDays    Int     @default(20)
   getsBankHolidays Boolean @default(false)
+  watchDaysBitmask Int     @default(0) // ✅ NEW
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 }
