@@ -1,15 +1,15 @@
 import Link from "next/link";
-import { getBudgetInsights } from "./budget-insights";
-import { getDashboardData } from "./actions";
 import HearthPlanLogo from "@/components/HearthPlanLogo";
 import BudgetTrendChart, { PotDef } from "@/components/BudgetTrendChart";
 import React from "react";
-import { formatDay } from "@/lib/utils";
 import Section from "@/components/Section";
 import Stat from "@/components/Stat";
 import WeekBars from "@/components/Weekbars";
 import { UserMenu } from "@/components/ui/UserMenu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
+import { getDashboardData } from "./actions";
+import { getBudgetInsights } from "./budget-insights";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { prisma } from "@/lib/prisma";
@@ -22,6 +22,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 function gbp(n: number) {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(n);
 }
+
 function parseTimeToMinutes(t?: string | null): number | null {
   if (!t) return null;
   const [h, m] = t.split(":").map(Number);
@@ -44,7 +45,12 @@ function roundUpMinutes(mins: number, increment: number): number {
   if (increment <= 1) return mins;
   return Math.ceil(mins / increment) * increment;
 }
+function formatDay(iso: string) {
+  const d = new Date(iso + "T00:00:00Z");
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
 
+// ---------- Nursery snapshot (only used for non-caregivers) ----------
 async function getNurserySnapshot() {
   const householdId = await getHouseholdIdOrThrow();
 
@@ -81,7 +87,7 @@ async function getNurserySnapshot() {
 
   const dayLabel = (i: number): DayKey => DAYS[(i - 1) as 0 | 1 | 2 | 3 | 4];
 
-  const kids = children.map((c : any) => {
+  const kids = children.map((c: any) => {
     const timetable: Record<DayKey, { start?: string; end?: string }> = {
       Mon: {}, Tue: {}, Wed: {}, Thu: {}, Fri: {},
     };
@@ -179,9 +185,8 @@ async function getNurserySnapshot() {
       weeklyTotal += best;
     }
 
-    // Funding
     const attendedHours = attendedMinutes / 60;
-    const fundedHoursPerWeek = c.ageYears >= 3 ? (yearMode === "FULL_YEAR" ? 22.8 : 30) : 0;
+    const fundedHoursPerWeek = c.ageYears >= 3 ? (settings?.yearMode === "FULL_YEAR" ? 22.8 : 30) : 0;
     const fundedHoursApplied = Math.min(attendedHours, fundedHoursPerWeek);
     const avgEffectiveRate = attendedHours > 0 ? weeklyTotal / attendedHours : 0;
     const creditRatePerHour = Math.min(rates.hourly, avgEffectiveRate);
@@ -191,7 +196,7 @@ async function getNurserySnapshot() {
     weeklyFundingCredit = Math.round(weeklyFundingCredit * 100) / 100;
 
     const weeklyAfterFunding = Math.max(0, Math.round((weeklyTotal - weeklyFundingCredit) * 100) / 100);
-    const monthlyInvoice = Math.round(weeklyAfterFunding * monthlyFactor * 100) / 100;
+    const monthlyInvoice = Math.round(weeklyAfterFunding * (weeksPerYear / monthlyDivisor) * 100) / 100;
 
     const tfcCap = (c.tfcMonthlyCapPence ?? 0) / 100;
     const tfcTopUp = Math.min(Math.round(monthlyInvoice * 0.2 * 100) / 100, tfcCap);
@@ -216,9 +221,9 @@ async function getNurserySnapshot() {
       },
       labels: {
         fundingRule: c.ageYears >= 3
-          ? (yearMode === "FULL_YEAR" ? "22.8 hrs/week (stretched)" : "30 hrs/week (term time)")
+          ? (settings?.yearMode === "FULL_YEAR" ? "22.8 hrs/week (stretched)" : "30 hrs/week (term time)")
           : "0 hrs/week (under 3)",
-        monthlyFactor: yearMode === "FULL_YEAR" ? "51 w/yr ÷ 12" : `${termWeeks} w/yr ÷ 11`,
+        monthlyFactor: settings?.yearMode === "FULL_YEAR" ? "51 w/yr ÷ 12" : `${termWeeks} w/yr ÷ 11`,
       },
     };
   });
@@ -227,13 +232,20 @@ async function getNurserySnapshot() {
 }
 
 export default async function DashboardShell() {
-  const [s, budget, session, nursery] = await Promise.all([
-    getDashboardData(),
-    getBudgetInsights(),
-    getServerSession(authOptions),
-    getNurserySnapshot(),
-  ]);
+  const session = await getServerSession(authOptions);
+  const role = (session as any)?.role ?? null;
+  const isCaregiver = role === "caregiver";
 
+  // Always needed for header + leave + activities blocks
+  const sPromise = getDashboardData();
+
+  // Only fetch heavy stuff for non-caregivers
+  const budgetPromise = isCaregiver ? Promise.resolve(null) : getBudgetInsights();
+  const nurseryPromise = isCaregiver ? Promise.resolve(null) : getNurserySnapshot();
+
+  const [s, budget, nursery] = await Promise.all([sPromise, budgetPromise, nurseryPromise]);
+
+  // Budget-derived values (only when not caregiver)
   const monthLabel = budget?.monthLabel ?? "This month";
   const plannedIncomeStr = budget?.plannedIncomeStr ?? "£0";
   const plannedExpenseStr = budget?.plannedExpenseStr ?? "£0";
@@ -285,87 +297,100 @@ export default async function DashboardShell() {
         </div>
       </div>
 
-      <Section title="Budget overview" ctaHref="/app#budget" ctaLabel="Open Family Budget" tone="violet">
-        <div className="grid gap-4">
-          <BudgetTrendChart data={trendData} potDefs={potDefs} />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="Planned income" value={plannedIncomeStr} sub={monthLabel} />
-            <Stat label="Planned expenses" value={plannedExpenseStr} sub={monthLabel} />
-            <Stat label="Net plan" value={netPlanStr} sub={budget?.netPlanNote} />
-            <Stat label="Saved so far" value={totalPotsStr} sub={topPotNote} />
+      {/* ====================== */}
+      {/* HIDE for caregivers    */}
+      {/* ====================== */}
+      {!isCaregiver && (
+        <Section title="Budget overview" ctaHref="/app#budget" ctaLabel="Open Family Budget" tone="violet">
+          <div className="grid gap-4">
+            <BudgetTrendChart data={trendData} potDefs={potDefs} />
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <Stat label="Planned income" value={plannedIncomeStr} sub={monthLabel} />
+              <Stat label="Planned expenses" value={plannedExpenseStr} sub={monthLabel} />
+              <Stat label="Net plan" value={netPlanStr} sub={budget?.netPlanNote} />
+              <Stat label="Saved so far" value={totalPotsStr} sub={topPotNote} />
+            </div>
           </div>
-        </div>
-        {!!budget?.topCategories?.length && (
-          <div className="mt-4">
-            <div className="text-xs opacity-70 mb-2">Top planned categories</div>
-            <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {budget.topCategories.map((c: any, i: number) => (
-                <li key={i} className="rounded-lg border px-3 py-2 bg-white flex items-center justify-between">
-                  <span className="text-sm">{c.name}</span>
-                  <span className="text-sm font-medium">{c.plannedStr}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="Childcare snapshot"
-        ctaHref="/app#nursery"
-        ctaLabel="Open Nursery Planner"
-        tone="green"
-      >
-        {nursery.kids.length === 0 ? (
-          <div className="text-sm opacity-75">
-            No childcare profiles yet. Set up your children, rates and timetable in the Nursery Planner.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <Tabs defaultValue={nursery.kids[0].id} className="w-full">
-              <TabsList className="w-full overflow-x-auto max-w-64">
-                {nursery.kids.map((k: any) => (
-                  <TabsTrigger key={k.id} value={k.id} className="whitespace-nowrap">
-                    {k.name}
-                  </TabsTrigger>
+          {!!budget?.topCategories?.length && (
+            <div className="mt-4">
+              <div className="text-xs opacity-70 mb-2">Top planned categories</div>
+              <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {budget.topCategories.map((c: any, i: number) => (
+                  <li key={i} className="rounded-lg border px-3 py-2 bg-white flex items-center justify-between">
+                    <span className="text-sm">{c.name}</span>
+                    <span className="text-sm font-medium">{c.plannedStr}</span>
+                  </li>
                 ))}
-              </TabsList>
+              </ul>
+            </div>
+          )}
+        </Section>
+      )}
 
-              {nursery.kids.map((k: any) => (
-                <TabsContent key={k.id} value={k.id} className="space-y-3">
-                  <div>
-                    <div className="text-xs opacity-70 mb-2">Weekly timetable</div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                      {DAYS.map((d) => {
-                        const slot = k.timetable[d];
-                        const label =
-                          slot?.start && slot?.end
-                            ? `${slot.start} – ${slot.end}`
-                            : "—";
-                        return (
-                          <div key={d} className="rounded-lg border p-2 bg-white h-16">
-                            <div className="text-sm opacity-70">{d}</div>
-                            <div className="text-m font-medium">{label}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+      {/* ====================== */}
+      {/* HIDE for caregivers    */}
+      {/* ====================== */}
+      {!isCaregiver && (
+        <Section
+          title="Childcare snapshot"
+          ctaHref="/app#nursery"
+          ctaLabel="Open Nursery Planner"
+          tone="green"
+        >
+          {nursery && nursery.kids.length === 0 ? (
+            <div className="text-sm opacity-75">
+              No childcare profiles yet. Set up your children, rates and timetable in the Nursery Planner.
+            </div>
+          ) : (
+            nursery && (
+              <div className="space-y-3">
+                <Tabs defaultValue={nursery.kids[0].id} className="w-full">
+                  <TabsList className="w-full overflow-x-auto max-w-64">
+                    {nursery.kids.map((k: any) => (
+                      <TabsTrigger key={k.id} value={k.id} className="whitespace-nowrap">
+                        {k.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
 
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                    <Stat label="Attended hours (weekly)" value={`${k.weekly.attendedHours.toFixed(2)} h`} />
-                    <Stat label="Weekly total (before funding)" value={gbp(k.weekly.totalBeforeFunding)} />
-                    <Stat label="Funding credit (weekly)" value={`- ${gbp(k.weekly.fundingCredit)}`} sub={k.labels.fundingRule} />
-                    <Stat label={`Estimated monthly (${k.labels.monthlyFactor})`} value={gbp(k.monthly.invoice)} />
-                    <Stat label="Parent net monthly" value={gbp(k.monthly.parentNet)} sub={`incl. TFC top-up ${gbp(k.monthly.tfcTopUp)}`} />
-                  </div>
-                </TabsContent>
-              ))}
-            </Tabs>
-          </div>
-        )}
-      </Section>
+                  {nursery.kids.map((k: any) => (
+                    <TabsContent key={k.id} value={k.id} className="space-y-3">
+                      <div>
+                        <div className="text-xs opacity-70 mb-2">Weekly timetable</div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                          {DAYS.map((d) => {
+                            const slot = k.timetable[d];
+                            const label =
+                              slot?.start && slot?.end
+                                ? `${slot.start} – ${slot.end}`
+                                : "—";
+                            return (
+                              <div key={d} className="rounded-lg border p-2 bg-white h-16">
+                                <div className="text-sm opacity-70">{d}</div>
+                                <div className="text-m font-medium">{label}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
 
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                        <Stat label="Attended hours (weekly)" value={`${k.weekly.attendedHours.toFixed(2)} h`} />
+                        <Stat label="Weekly total (before funding)" value={gbp(k.weekly.totalBeforeFunding)} />
+                        <Stat label="Funding credit (weekly)" value={`- ${gbp(k.weekly.fundingCredit)}`} sub={k.labels.fundingRule} />
+                        <Stat label={`Estimated monthly (${k.labels.monthlyFactor})`} value={gbp(k.monthly.invoice)} />
+                        <Stat label="Parent net monthly" value={gbp(k.monthly.parentNet)} sub={`incl. TFC top-up ${gbp(k.monthly.tfcTopUp)}`} />
+                      </div>
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </div>
+            )
+          )}
+        </Section>
+      )}
+
+      {/* Always visible */}
       <Section title="Annual leave & closures" ctaHref="/app#leave" ctaLabel="Open Annual Leave" tone="amber">
         <div className="grid md:grid-cols-2 gap-4">
           <div>
@@ -399,6 +424,7 @@ export default async function DashboardShell() {
         </div>
       </Section>
 
+      {/* Always visible */}
       <Section title="Activities snapshot" ctaHref="/app#activities" ctaLabel="Open Activities" tone="blue">
         <div className="grid lg:grid-cols-2 gap-4">
           <div>

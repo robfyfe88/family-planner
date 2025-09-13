@@ -1,101 +1,63 @@
+// src/lib/household.ts
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
 
-type UserIdentity = { userId: string; email?: string | null; name?: string | null };
+// If you’re only using NextAuth now, keep this import.
+// If you still have Clerk in the tree, this file won’t require it.
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 
-export async function getCurrentUserIdentity(): Promise<{ userId: string; email?: string | null; name?: string | null }> {
-  try {
-    const { currentUser } = await import("@clerk/nextjs/server");
-    const u = await currentUser();
-    if (u) {
-      const userId = u.id; 
-      const email =
-        u.primaryEmailAddress?.emailAddress ??
-        u.emailAddresses?.[0]?.emailAddress ??
-        null;
-      const name =
-        u.fullName ??
-        ([u.firstName, u.lastName].filter(Boolean).join(" ") || null);
-      return { userId, email, name };
-    }
-  } catch {
-  }
+/** Minimal identity pulled from NextAuth session */
+async function getIdentity(): Promise<{ email: string | null; memberId: string | null; householdId: string | null }> {
+  const session = await getServerSession(authOptions);
 
-  try {
-    const { getServerSession } = await import("next-auth");
-    const session = await getServerSession();
-    if (session?.user) {
-      const id = (session.user as any).id ?? session.user.email;
-      if (!id) throw new Error("No user id in session");
-      return {
-        userId: String(id),
-        email: session.user.email ?? null,
-        name: session.user.name ?? null,
-      };
-    }
-  } catch {
-  }
+  if (!session) throw new Error("Not authenticated");
 
-  throw new Error("Not authenticated");
+  const email =
+    (session.user?.email?.trim().toLowerCase() as string | undefined) ?? null;
+
+  const memberId = (session as any).memberId ?? null;
+  const householdId = (session as any).householdId ?? null;
+
+  return { email, memberId, householdId };
 }
 
-
+/**
+ * Resolve the current user's household ID.
+ * - Uses householdId/memberId already placed on the session by auth callbacks.
+ * - If missing, falls back to a read-only lookup by inviteEmail.
+ * - DOES NOT CREATE anything. If nothing is found, throws.
+ */
 export async function getOrCreateHouseholdForUser(): Promise<string> {
-  const { userId, email, name } = await getCurrentUserIdentity();
+  const { email, memberId, householdId } = await getIdentity();
 
-  const linked = await prisma.member.findFirst({
-    where: { userId },
-    select: { householdId: true },
-  });
-  if (linked) return linked.householdId;
+  // 1) If auth callbacks put householdId on the session, trust it.
+  if (householdId) return householdId;
 
-  const normEmail = email?.toLowerCase() ?? null;
-
-  if (normEmail) {
-    const invited = await prisma.member.findFirst({
-      where: { inviteEmail: normEmail },
-      select: { id: true, householdId: true },
-    });
-    if (invited) {
-      await prisma.member.update({
-        where: { id: invited.id },
-        data: { userId, inviteEmail: null, name: name ?? normEmail },
-      });
-      return invited.householdId;
-    }
-  }
-
-  const display = (name ?? normEmail ?? "You").trim();
-
-  try {
-    const householdId = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const hh = await tx.household.create({
-        data: { name: `${display}'s Household` },
-        select: { id: true },
-      });
-
-      await tx.member.create({
-        data: {
-          householdId: hh.id,
-          name: display,
-          role: "parent", 
-          userId,
-        },
-      });
-
-      return hh.id;
-    });
-    return householdId;
-  } catch (e) {
-    const fallback = await prisma.member.findFirst({
-      where: { userId },
+  // 2) If we have a memberId, read its household.
+  if (memberId) {
+    const m = await prisma.member.findUnique({
+      where: { id: memberId },
       select: { householdId: true },
     });
-    if (fallback) return fallback.householdId;
-    throw e;
+    if (m?.householdId) return m.householdId;
   }
+
+  // 3) Fallback by email -> inviteEmail (works for caregivers & parents that were invited)
+  if (email) {
+    const invited = await prisma.member.findFirst({
+      where: { inviteEmail: email },
+      select: { householdId: true },
+    });
+    if (invited?.householdId) return invited.householdId;
+  }
+
+  // 4) Nothing matched — do NOT create. Force a data fix instead.
+  throw new Error(
+    "No household linked to this account. Ask a parent to add your email under Members."
+  );
 }
 
+// Backward-compatible export name used elsewhere
 export async function getHouseholdIdOrThrow(): Promise<string> {
   return getOrCreateHouseholdForUser();
 }
