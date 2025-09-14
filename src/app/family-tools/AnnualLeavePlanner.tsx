@@ -182,7 +182,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     "northern-ireland": Set<string>;
   }>({ "england-and-wales": new Set(), scotland: new Set(), "northern-ireland": new Set() });
   const bankHolidaySet = useMemo(() => bhSets[settings.region], [bhSets, settings.region]);
-  React.useEffect(() => { (async () => { try { setBhSets(await fetchBankHolidays()); } catch {} })(); }, []);
+  React.useEffect(() => { (async () => { try { setBhSets(await fetchBankHolidays()); } catch { } })(); }, []);
 
   const persistSettings = (patch: Partial<typeof settings>) => {
     const next = { ...settings, ...patch };
@@ -706,6 +706,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
             openAddEvent={(dateISO) => openAddDialogFor(dateISO)}
             eventsByDate={eventsByDate}
             onEditEvent={openEditDialogFor}
+            initial={initial}
           />
         </div>
 
@@ -715,7 +716,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
           <span className="badge badge-pink">Allocated leave</span>
           <span className="px-2 py-0.5 rounded-full border border-red-400 text-red-600">Uncovered</span>
           <span className="ml-auto">
-            {isPending ? "Saving…" : "Tap to toggle • ⚙ override" }
+            {isPending ? "Saving…" : "Tap to toggle • ⚙ override"}
             {!isCaregiver && " • ＋ add event"}
           </span>
         </div>
@@ -999,6 +1000,7 @@ function MobileMonthList({
   openAddEvent,
   eventsByDate,
   onEditEvent,
+  initial,
 }: {
   days: Date[];
   parentA: ParentConfigDTO | null;
@@ -1013,6 +1015,7 @@ function MobileMonthList({
   openAddEvent: (dateISO: string) => void;
   eventsByDate: Map<string, HolidayEventDTO[]>;
   onEditEvent: (ev: HolidayEventDTO) => void;
+  initial: { caregivers: CaregiverDTO[]; }
 }) {
   const rows = days.map((d) => {
     const id = ymd(d);
@@ -1092,6 +1095,17 @@ function MobileMonthList({
                 {parentB && <DropdownMenuItem onClick={() => setOverride(id, "off:B")}>Mark {parentB.name} off (no leave)</DropdownMenuItem>}
                 {parentA && parentB && <DropdownMenuItem onClick={() => setOverride(id, "off:both")}>Mark both off (no leave)</DropdownMenuItem>}
 
+                {initial.caregivers.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {initial.caregivers.map((c) => (
+                      <DropdownMenuItem key={c.id} onClick={() => setOverride(id, `C:${c.id}`)}>
+                        <span className="inline-block w-3 h-3 rounded mr-2" style={{ backgroundColor: c.color ?? "#94a3b8" }} />
+                        {c.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
                 {/* Holiday events on this date */}
                 {eventsToday.length > 0 && (
                   <>
