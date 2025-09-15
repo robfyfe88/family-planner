@@ -415,8 +415,8 @@ export default async function DashboardShell() {
               {s.upcomingLeave.map((l: any) => (
                 <li key={l.id} className="text-sm">
                   <span className="inline-block w-28 opacity-70">{formatDay(l.dateISO)}</span>
-                  <span className="font-medium">{l.label}</span>
-                  {l.member ? <span className="opacity-70"> — {l.member}</span> : null}
+                  
+                  {l.member ? <span className="opacity-70 font-bold"> {l.member}</span> : null}
                 </li>
               ))}
             </ul>
