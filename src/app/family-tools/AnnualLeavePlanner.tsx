@@ -528,7 +528,8 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                 title={`${id}${closed ? " • school closed" : ""}${isBH ? " • bank holiday" : ""}`}
                 style={{
                   boxShadow: isBH ? "inset 0 0 0 2px rgba(59,130,246,0.6)" : undefined,
-                  borderTop: isUncovered ? "3px solid rgba(239,68,68,0.6)" : undefined,
+                  borderTop: isUncovered ? "3px solid rgba(249, 13, 13, 1)" : undefined,
+                  backgroundColor: closed ? "rgba(245, 158, 11,0.5)" : undefined,
                 }}
               >
                 <div className="text-xs mb-1 flex items-center justify-between">
@@ -612,7 +613,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
                 <div className="absolute left-2 right-2 bottom-2 text-[10px]">
                   <div className="flex items-center gap-2 whitespace-nowrap">
-                    {closed && <span className="opacity-70">School closed</span>}
                     {isBH && <span className="opacity-70">Bank hol.</span>}
                   </div>
                   {eventsToday.length > 0 && (
@@ -652,6 +652,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
             eventsByDate={eventsByDate}
             onEditEvent={openEditDialogFor}
             initial={initial}
+            isCaregiver={isCaregiver}
           />
         </div>
 
@@ -979,7 +980,7 @@ function MonthPicker({ anchor, onChange }: { anchor: Date; onChange: (d: Date) =
 function Chip({ label, color, muted }: { label: string; color: string; muted?: boolean }) {
   const style = muted ? { backgroundColor: "#e5e7eb", color: "#374151" } : { backgroundColor: color, color: "white" };
   return (
-    <span className="inline-flex items-center justify-center px-1.5 h-8 w-8 rounded-[6px] mb-1 text-[18px] font-medium" style={style} title={label}>
+    <span className="inline-flex items-center justify-center px-1.5 h-8 w-8 md:h-5 md:w-5 rounded-[6px] mb-1 text-[18px] md:text-[12px] font-medium" style={style} title={label}>
       {label}
     </span>
   );
@@ -1025,6 +1026,7 @@ function MobileMonthList({
   eventsByDate,
   onEditEvent,
   initial,
+  isCaregiver,
 }: {
   days: Date[];
   parentA: ParentConfigDTO | null;
@@ -1040,6 +1042,7 @@ function MobileMonthList({
   eventsByDate: Map<string, HolidayEventDTO[]>;
   onEditEvent: (ev: HolidayEventDTO) => void;
   initial: { caregivers: CaregiverDTO[] };
+  isCaregiver: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -1120,14 +1123,7 @@ function MobileMonthList({
               <div className="absolute top-2 right-2 z-50">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-10 w-10"
-                      aria-label={`Override ${id}`}
-                    >
-                      <Settings className="h-5 w-5" />
-                    </Button>
+                    <Settings  size={24} />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 z-50">
                     <DropdownMenuLabel>Actions ({id})</DropdownMenuLabel>
@@ -1251,6 +1247,7 @@ function MobileMonthList({
 
 
                 {/* Row 4: closure action (acts as status) */}
+                {!isCaregiver && ( 
                 <div className="mt-2">
                   <Button
                     size="sm"
@@ -1261,6 +1258,7 @@ function MobileMonthList({
                     {closureLabel}
                   </Button>
                 </div>
+                )}
               </div>
             </div>
           );
