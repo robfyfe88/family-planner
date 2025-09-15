@@ -412,19 +412,37 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
               </Select>
             </div>
 
-            <div className="flex gap-2 w-full md:justify-end md:col-span-2">
-              <Button onClick={applyPlan} disabled={isPending} className="whitespace-nowrap">
-                <CalendarCog className="mr-2 h-4 w-4" />
-                Auto-Plan
-              </Button>
-              <Button variant="outline" onClick={clearPlan} disabled={isPending} className="whitespace-nowrap">
-                <BrushCleaning className="mr-2 h-4 w-4" />
-                Clear plan
-              </Button>
-              <Button variant="outline" onClick={clearSchoolDays} disabled={isPending} className="whitespace-nowrap">
-                <BrushCleaning className="mr-2 h-4 w-4" />
-                Clear school days
-              </Button>
+            <div className="w-full md:col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                <Button
+                  onClick={applyPlan}
+                  disabled={isPending}
+                  className="w-full md:whitespace-nowrap"
+                >
+                  <CalendarCog className="mr-2 h-4 w-4" />
+                  Auto-Plan
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={clearPlan}
+                  disabled={isPending}
+                  className="w-full md:whitespace-nowrap"
+                >
+                  <BrushCleaning className="mr-2 h-4 w-4" />
+                  Clear plan
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={clearSchoolDays}
+                  disabled={isPending}
+                  className="w-full md:whitespace-nowrap"
+                >
+                  <BrushCleaning className="mr-2 h-4 w-4" />
+                  Clear school days
+                </Button>
+              </div>
             </div>
           </div>
         </section>
@@ -651,15 +669,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent
-          className="
-      fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
-      w-[calc(100vw-2rem)] sm:w-auto
-      max-w-[720px]
-      max-h-[85vh] overflow-y-auto
-      p-4 sm:p-6
-      gap-4 sm:gap-6
-      rounded-xl
-    "
         >
           <DialogHeader className="space-y-1">
             <DialogTitle className="text-base sm:text-lg">
@@ -970,7 +979,7 @@ function MonthPicker({ anchor, onChange }: { anchor: Date; onChange: (d: Date) =
 function Chip({ label, color, muted }: { label: string; color: string; muted?: boolean }) {
   const style = muted ? { backgroundColor: "#e5e7eb", color: "#374151" } : { backgroundColor: color, color: "white" };
   return (
-    <span className="inline-flex items-center justify-center px-1.5 h-5 rounded-[6px] text-[11px] font-medium" style={style} title={label}>
+    <span className="inline-flex items-center justify-center px-1.5 h-8 w-8 rounded-[6px] mb-1 text-[18px] font-medium" style={style} title={label}>
       {label}
     </span>
   );
@@ -1035,7 +1044,7 @@ function MobileMonthList({
   return (
     <div className="space-y-2">
       <div className="text-xs opacity-70 -mt-1 mb-1">
-        Tap to set closures • use ⚙ for overrides • ＋ for events
+        Tap the blue pill to toggle school closure • use ⚙ for overrides • ＋ for events
       </div>
 
       <div className="space-y-3">
@@ -1049,27 +1058,23 @@ function MobileMonthList({
 
           const cov = planByDate.get(id)?.coverage;
 
-          // Rule-based “off” (matches desktop)
+          // Rule-based day-off hints
           const offAByRule =
             !!parentA && (parentA.offDays.includes(w) || (isBH && parentA.getsBankHolidays));
           const offBByRule =
             !!parentB && (parentB.offDays.includes(w) || (isBH && parentB.getsBankHolidays));
           const coveredByRule = offAByRule || offBByRule;
 
-          // Uncovered logic (same as desktop)
+          // Uncovered logic (matches desktop)
           const isUncovered = closed && !coveredByRule && (!cov || cov.type === "none");
 
-          // Chip row (who’s allocated)
+          // Who’s covering (chips)
           const chips: React.ReactNode[] = [];
           if (cov?.type === "leave") {
             if ((cov.who === "A" || cov.who === "both") && parentA)
-              chips.push(
-                <Chip key="A" label={parentA.shortLabel || "A"} color="#3B82F6" />
-              );
+              chips.push(<Chip key="A" label={parentA.shortLabel || "A"} color="#3B82F6" />);
             if ((cov.who === "B" || cov.who === "both") && parentB)
-              chips.push(
-                <Chip key="B" label={parentB.shortLabel || "B"} color="#10B981" />
-              );
+              chips.push(<Chip key="B" label={parentB.shortLabel || "B"} color="#10B981" />);
           } else if (cov?.type === "care") {
             const cg = caregivers.find((c) => c.id === cov.caregiverId);
             if (cg)
@@ -1086,7 +1091,6 @@ function MobileMonthList({
                 <Chip key="Boff" label={parentB?.shortLabel || "B"} color="#94a3b8" muted />
               );
           } else {
-            // hint chips for rule-based days off
             if (offAByRule)
               chips.push(
                 <Chip key="Ahint" label={parentA?.shortLabel || "A"} color="#94a3b8" muted />
@@ -1099,6 +1103,10 @@ function MobileMonthList({
 
           const eventsToday = eventsByDate.get(id) ?? [];
 
+          // Button acts as status: “School closed” vs “Set school closure”
+          const closureLabel = closed ? "School closed" : "Set school closure";
+          const closureVariant = closed ? "default" : "outline";
+
           return (
             <div
               key={id}
@@ -1106,23 +1114,22 @@ function MobileMonthList({
                 relative grid grid-cols-[56px_1fr] gap-3 p-3 rounded-xl border bg-white shadow-sm
                 ${isUncovered ? "border-red-300" : "border-gray-200"}
                 ${isToday(d) ? "ring-1 ring-[var(--accent-2)]" : ""}
-                min-h-28
               `}
             >
-              {/* Bigger cog in the top-right */}
-              <div className="absolute top-2 right-2 z-100">
+              {/* Cog in the top-right, bigger, always clickable */}
+              <div className="absolute top-2 right-2 z-50">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-10 w-10" // bigger
+                      className="h-10 w-10"
                       aria-label={`Override ${id}`}
                     >
-                      <Settings className="h-5 w-5 z-50" />
+                      <Settings className="h-5 w-5" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 z-100">
+                  <DropdownMenuContent align="end" className="w-56 z-50">
                     <DropdownMenuLabel>Actions ({id})</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     {parentA && (
@@ -1140,7 +1147,6 @@ function MobileMonthList({
                         Both leave
                       </DropdownMenuItem>
                     )}
-
                     <DropdownMenuSeparator />
                     {parentA && (
                       <DropdownMenuItem onClick={() => setOverride(id, "off:A")}>
@@ -1157,15 +1163,11 @@ function MobileMonthList({
                         Mark both off (no leave)
                       </DropdownMenuItem>
                     )}
-
                     {initial.caregivers.length > 0 && (
                       <>
                         <DropdownMenuSeparator />
                         {initial.caregivers.map((c) => (
-                          <DropdownMenuItem
-                            key={c.id}
-                            onClick={() => setOverride(id, `C:${c.id}`)}
-                          >
+                          <DropdownMenuItem key={c.id} onClick={() => setOverride(id, `C:${c.id}`)}>
                             <span
                               className="inline-block w-3 h-3 rounded mr-2"
                               style={{ backgroundColor: c.color ?? "#94a3b8" }}
@@ -1175,7 +1177,6 @@ function MobileMonthList({
                         ))}
                       </>
                     )}
-
                     {eventsToday.length > 0 && (
                       <>
                         <DropdownMenuSeparator />
@@ -1191,12 +1192,10 @@ function MobileMonthList({
                         ))}
                       </>
                     )}
-
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => openAddEvent(id)}>
                       <Plus className="h-4 w-4 mr-2" /> Add holiday event here
                     </DropdownMenuItem>
-
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setOverride(id, "clear")}>
                       Clear override
@@ -1207,9 +1206,9 @@ function MobileMonthList({
 
               {/* Date column */}
               <div className="flex flex-col items-center pt-1">
-                <div className="text-xs opacity-70">{weekday}</div>
+                <div className="text-[16px] opacity-70">{weekday}</div>
                 <div
-                  className={`mt-0.5 inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold
+                  className={`mt-0.5 inline-flex items-center justify-center w-16 h-16 rounded-full text-[22px] font-semibold
                     ${isToday(d) ? "bg-[var(--accent-2)] text-white" : "bg-gray-100 text-gray-900"}
                   `}
                 >
@@ -1217,14 +1216,29 @@ function MobileMonthList({
                 </div>
               </div>
 
-              {/* Content column */}
+              {/* Content column — uniform rows */}
               <div className="flex flex-col min-w-0">
-                {/* Chips (who’s covering) */}
-                <div className="flex flex-wrap gap-1">{chips}</div>
-
-                {/* Badges row */}
-                <div className="mt-1 min-h-4 flex flex-wrap items-center gap-2 text-[11px] opacity-80">
-                  {closed && <span className="badge badge-yellow">School closed</span>}
+                {/* Row 1: chips (fixed min-height) */}
+                <div className="flex flex-wrap gap-1 min-h-[22px]">{chips}</div>
+                <div className="mt-1 flex flex-wrap gap-2 min-h-[24px]">
+                  {eventsToday.map((ev) => (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={() => onEditEvent(ev)}
+                      className="inline-flex items-center gap-2 text-{22px] px-2.5 py-1 rounded-full border hover:bg-gray-50"
+                      title={ev.title}
+                    >
+                      <span
+                        className="inline-block w-2 h-2 rounded-full"
+                        style={{ background: ev.color ?? "#c084fc" }}
+                      />
+                      <span className="max-w-[180px] truncate">{ev.title}</span>
+                    </button>
+                  ))}
+                </div>
+                {/* Row 2: informational badges (fixed min-height) */}
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[16px] opacity-80 min-h-[18px]">
                   {isBH && <span className="badge badge-teal">Bank hol.</span>}
                   {isUncovered && (
                     <span className="px-2 py-0.5 rounded-full border border-red-400 text-red-600">
@@ -1233,29 +1247,18 @@ function MobileMonthList({
                   )}
                 </div>
 
-                {/* Events row */}
-                {eventsToday.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {eventsToday.map((ev) => (
-                      <EventPill
-                        key={ev.id}
-                        title={ev.title}
-                        color={ev.color}
-                        onClick={() => onEditEvent(ev)}
-                      />
-                    ))}
-                  </div>
-                )}
+                {/* Row 3: events (larger chips, fixed min-height) */}
 
-                {/* Actions row */}
+
+                {/* Row 4: closure action (acts as status) */}
                 <div className="mt-2">
                   <Button
                     size="sm"
-                    variant={closed ? "default" : "outline"}
-                    className="h-9 w-1/3"
+                    variant={closureVariant}
+                    className={`h-9 rounded-full px-3 ${closed ? "bg-blue-600 text-white hover:bg-blue-600" : ""}`}
                     onClick={() => toggleClosure(d)}
                   >
-                    {closed ? "Unset closure" : "Set as closure"}
+                    {closureLabel}
                   </Button>
                 </div>
               </div>
@@ -1266,5 +1269,6 @@ function MobileMonthList({
     </div>
   );
 }
+
 
 
