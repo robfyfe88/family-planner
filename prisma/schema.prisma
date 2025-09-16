@@ -19,39 +19,56 @@ enum RecurrenceKind {
   every_n_weeks
 }
 
+enum FeeModel {
+  per_session   // multiply by #occurrences in month
+  monthly       // same amount each month within date window (or open-ended)
+  one_off       // charge once in start month
+  total_range   // total for the whole range; see allocation
+}
+
+enum Allocation {
+  evenly   // spread equally across months in range
+  upfront  // take the whole amount in the start month
+}
+
 model PlannerActivity {
-  id          String @id @default(cuid())
-  householdId String
-  createdById String
+  id             String          @id @default(cuid())
+  householdId    String
+  createdById    String
 
   // UI fields
-  type  String // "Sports" | "Clubs" | "Lessons" | "Appointments" | "Event" | "Other"
-  name  String
-  notes String? @db.Text
+  type           String
+  name           String
+  notes          String?         @db.Text
 
   // date-only semantics (store as DateTime at midnight UTC)
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date
+  startDate      DateTime        @db.Date
+  endDate        DateTime?       @db.Date   // <-- make optional (open-ended recurrences supported)
 
   // recurrence
   recurrenceKind RecurrenceKind
-  daysOfWeek     Int[] // 0..6; empty if kind === none
-  intervalWeeks  Int? // only for every_n_weeks
+  daysOfWeek     Int[]
+  intervalWeeks  Int?
 
-  // money
-  costPerSession Decimal @db.Decimal(10, 2)
+  // FEES
+  feeModel       FeeModel        @default(per_session)
+  amount         Decimal         @db.Decimal(10, 2) @default(0)  // interpreted by feeModel
+  allocation     Allocation?     // only used when feeModel = total_range
+
+  // legacy (still read for back-compat)
+  costPerSession Decimal         @db.Decimal(10, 2) @default(0)
 
   // relations
-  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  createdBy Member    @relation("CreatedByMember", fields: [createdById], references: [id], onDelete: Cascade)
+  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy      Member          @relation("CreatedByMember", fields: [createdById], references: [id], onDelete: Cascade)
 
-  members     PlannerActivityMember[]
-  budgetLinks PlannerBudgetLink[]
+  members        PlannerActivityMember[]
+  budgetLinks    PlannerBudgetLink[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  @@index([householdId, startDate, endDate])
+  @@index([householdId, startDate])
 }
 
 model PlannerActivityMember {

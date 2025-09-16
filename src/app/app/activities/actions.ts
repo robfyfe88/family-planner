@@ -52,7 +52,7 @@ export type ActivityDTO = {
   name: string;
   notes?: string;
   startDate: string; // "YYYY-MM-DD"
-  endDate: string;   // "YYYY-MM-DD"
+  endDate: string;   // "YYYY-MM-DD" (empty string if null)
   recurrence: {
     kind: RecurrenceKind;
     daysOfWeek: Weekday[];
@@ -78,10 +78,10 @@ export async function listPlannerActivities(): Promise<ActivityDTO[]> {
     name: a.name,
     notes: a.notes ?? undefined,
     startDate: a.startDate.toISOString().slice(0, 10),
-    endDate: a.endDate.toISOString().slice(0, 10),
+    endDate: a.endDate ? a.endDate.toISOString().slice(0, 10) : "",
     recurrence: {
       kind: a.recurrenceKind as RecurrenceKind,
-      daysOfWeek: a.daysOfWeek as Weekday[],
+      daysOfWeek: (a.daysOfWeek as number[]).map((n) => n as Weekday),
       intervalWeeks: a.intervalWeeks ?? undefined,
     },
     costPerSession: Number(a.costPerSession),
@@ -95,45 +95,49 @@ export type UpsertPlannerActivityInput = {
   type: string;
   name: string;
   notes?: string;
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
+  startDate: string;          // YYYY-MM-DD
+  endDate?: string | null;    // optional; NULL means open-ended
   recurrence: {
     kind: RecurrenceKind;
     daysOfWeek: Weekday[];
     intervalWeeks?: number;
   };
+  // NEW (persist these)
+  feeModel?: "per_session" | "monthly" | "one_off" | "total_range";
+  amount?: number | null;
+  allocation?: "evenly" | "upfront" | null;
+
+  // legacy back-compat (kept)
   costPerSession: number;
+
   memberIds: string[];
-
-  // Optional: control how budget rows are labeled/categorised
-  budgetCategory?: string; // default "Kids Clubs"
-  budgetLabel?: string;    // default = name
+  budgetCategory?: string;
+  budgetLabel?: string;
 };
-
 /**
  * Create/update a planner activity and re-sync its monthly budget links.
  * Parents and caregivers in the same household are allowed (tighten if desired).
  */
 export async function upsertPlannerActivity(input: UpsertPlannerActivityInput) {
-  const { householdId, memberId /*, role*/ } = await getSessionContext();
+  const { householdId, memberId } = await getSessionContext();
 
-  // If you want to restrict caregivers:
-  // if (role === "caregiver") throw new Error("Caregivers cannot edit activities");
-
-  // Ensure actor belongs to the same household
-  const me = await prisma.member.findFirst({ where: { id: memberId, householdId } });
-  assert(me, "Forbidden");
-
-  // Basic validation
   const name = (input.name || "").trim();
   if (!name) throw new Error("Name is required");
   if (!input.memberIds?.length) throw new Error("Assign at least one member");
 
-  const start = new Date(input.startDate + "T00:00:00.000Z");
-  const end = new Date(input.endDate + "T00:00:00.000Z");
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error("Invalid dates");
+  const start = new Date(`${input.startDate}T00:00:00.000Z`);
+  if (isNaN(start.getTime())) throw new Error("Invalid start date");
 
-  const cost = new Decimal(input.costPerSession || 0);
+  // ⬇️ IMPORTANT: blank => NULL (true open-ended)
+  const endISO = input.endDate && input.endDate.trim() ? input.endDate : null;
+  const end = endISO ? new Date(`${endISO}T00:00:00.000Z`) : null;
+  if (endISO && isNaN(end!.getTime())) throw new Error("Invalid end date");
+
+  // cost fields
+  const feeModel = (input.feeModel ?? "per_session") as
+    | "per_session" | "monthly" | "one_off" | "total_range";
+  const amountNum = Number(input.amount ?? input.costPerSession ?? 0);
+  const allocation = (input.allocation ?? null) as "evenly" | "upfront" | null;
 
   const baseData = {
     householdId,
@@ -142,77 +146,85 @@ export async function upsertPlannerActivity(input: UpsertPlannerActivityInput) {
     name,
     notes: input.notes?.trim() || null,
     startDate: start,
-    endDate: end,
+    endDate: end,                     // store NULL if open-ended
     recurrenceKind: input.recurrence.kind,
-    daysOfWeek: input.recurrence.daysOfWeek.map((n) => Number(n)),
+    daysOfWeek: input.recurrence.daysOfWeek.map(Number),
     intervalWeeks: input.recurrence.intervalWeeks ?? null,
-    costPerSession: cost,
+    // persist new fee fields
+    feeModel,
+    amount: amountNum,
+    allocation,
+    // legacy field stays in sync for back-compat
+    costPerSession: new Decimal(feeModel === "per_session" ? amountNum : 0),
   };
 
-  // Upsert activity + membership in a transaction
   const activity = await prisma.$transaction(async (tx) => {
-    let act;
-    if (input.id) {
-      act = await tx.plannerActivity.update({
-        where: { id: input.id, householdId },
-        data: {
-          ...baseData,
-          // replace members
-          members: {
-            deleteMany: {},
-            createMany: {
-              data: input.memberIds.map((mid) => ({ memberId: mid })),
-              skipDuplicates: true,
+    const act = input.id
+      ? await tx.plannerActivity.update({
+          where: { id: input.id, householdId },
+          data: {
+            ...baseData,
+            members: {
+              deleteMany: {},
+              createMany: {
+                data: input.memberIds.map((mid) => ({ memberId: mid })),
+                skipDuplicates: true,
+              },
             },
           },
-        },
-      });
-    } else {
-      act = await tx.plannerActivity.create({
-        data: {
-          ...baseData,
-          members: {
-            createMany: {
-              data: input.memberIds.map((mid) => ({ memberId: mid })),
-              skipDuplicates: true,
+        })
+      : await tx.plannerActivity.create({
+          data: {
+            ...baseData,
+            members: {
+              createMany: {
+                data: input.memberIds.map((mid) => ({ memberId: mid })),
+                skipDuplicates: true,
+              },
             },
           },
-        },
-      });
-    }
+        });
     return act;
   });
 
-  // === Budget sync ===
-  const counts = countByMonth(
-    input.startDate,
-    input.endDate,
-    input.recurrence.kind,
-    input.recurrence.daysOfWeek,
-    input.recurrence.intervalWeeks
-  );
+  // === Budget links (optional precomputation) ===
+  // For one-offs: 1 occurrence in the start month
+  // For recurring with an explicit end: expand by month
+  // For open-ended recurring (end == NULL): skip precreating links; runtime merge handles it.
+  let counts = new Map<string, number>();
+
+  if (input.recurrence.kind === "none") {
+    const y = start.getUTCFullYear();
+    const m = start.getUTCMonth() + 1;
+    counts.set(`${y}-${m}`, 1);
+  } else if (endISO) {
+    counts = countByMonth(
+      input.startDate,
+      endISO,
+      input.recurrence.kind,
+      input.recurrence.daysOfWeek,
+      input.recurrence.intervalWeeks
+    );
+  }
 
   const category = input.budgetCategory || "Kids Clubs";
   const label = (input.budgetLabel || name).trim();
 
-  // Rebuild all links for the activity idempotently
   await prisma.$transaction(async (tx) => {
     await tx.plannerBudgetLink.deleteMany({ where: { activityId: activity.id } });
-
-    const rows = Array.from(counts.entries()).map(([ym, n]) => {
-      const [yy, mm] = ym.split("-").map(Number);
-      return {
-        activityId: activity.id,
-        householdId,
-        year: yy,
-        month: mm,
-        amount: cost.mul(n),
-        category,
-        label,
-      };
-    });
-
-    if (rows.length) {
+    if (counts.size) {
+      const rows = Array.from(counts.entries()).map(([ym, n]) => {
+        const [yy, mm] = ym.split("-").map(Number);
+        return {
+          activityId: activity.id,
+          householdId,
+          year: yy,
+          month: mm,
+          amount: new Decimal(amountNum).mul(n),
+          category,
+          label,
+        };
+      });
       await tx.plannerBudgetLink.createMany({ data: rows, skipDuplicates: true });
     }
   });
