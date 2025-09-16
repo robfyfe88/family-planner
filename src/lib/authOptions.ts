@@ -1,21 +1,16 @@
-// src/lib/authOptions.ts
 import type { NextAuthOptions } from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 
-/** normalize */
 const norm = (e?: string | null) => (e || "").trim().toLowerCase();
 
-/** get the provider account id in a version-safe way */
 const accountIdOf = (account: any): string | null =>
   account?.providerAccountId ?? account?.sub ?? account?.userId ?? null;
 
-/** Find parent by Google account OR legacy email in userId OR inviteEmail */
 async function findParentForGoogle(accountId: string | null, email: string | null) {
   const emailN = norm(email);
 
-  // 1) exact match on userId === google sub
   if (accountId) {
     const m = await prisma.member.findFirst({
       where: { role: "parent", userId: accountId },
@@ -24,7 +19,6 @@ async function findParentForGoogle(accountId: string | null, email: string | nul
     if (m) return m;
   }
 
-  // 2) legacy: some rows have userId = email
   if (emailN) {
     const legacy = await prisma.member.findFirst({
       where: { role: "parent", userId: emailN },
@@ -32,7 +26,6 @@ async function findParentForGoogle(accountId: string | null, email: string | nul
     });
     if (legacy) return legacy;
 
-    // 3) fallback: parent with inviteEmail saved
     const byInvite = await prisma.member.findFirst({
       where: { role: "parent", inviteEmail: emailN },
       select: { id: true, role: true, householdId: true, userId: true },
@@ -43,7 +36,6 @@ async function findParentForGoogle(accountId: string | null, email: string | nul
   return null;
 }
 
-/** caregiver sign-in is by inviteEmail only (no password) */
 async function findCaregiverByEmail(email?: string | null) {
   const e = norm(email);
   if (!e) return null;
@@ -76,7 +68,6 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    /** allow or block sign-in */
     async signIn({ account, user }) {
       const provider = account?.provider;
       if (!provider) return false;
@@ -88,7 +79,6 @@ export const authOptions: NextAuthOptions = {
         const parent = await findParentForGoogle(accId, email);
         if (!parent) return false;
 
-        // migrate legacy userId (email) to Google sub for future logins
         if (accId && parent.userId !== accId) {
           await prisma.member.update({
             where: { id: parent.id },
@@ -103,12 +93,10 @@ export const authOptions: NextAuthOptions = {
       return false;
     },
 
-    /** put Member identity on the token */
     async jwt({ token, account, user }) {
       const accId = accountIdOf(account);
       const email = norm(user?.email || (token as any)?.email);
 
-      // Parent via Google (new or legacy)
       if (account?.provider === "google") {
         const parent = await findParentForGoogle(accId, email);
         if (parent) {
@@ -119,7 +107,6 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
-      // Caregiver via credentials
       if (account?.provider === "caregiver" || (token as any).role === "caregiver") {
         const cg = await findCaregiverByEmail(email);
         if (cg) {
@@ -130,7 +117,6 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
-      // Fallback: resolve by inviteEmail for any existing session refresh
       if (!token.householdId && email) {
         const m = await prisma.member.findFirst({
           where: { inviteEmail: email },
@@ -146,7 +132,6 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
 
-    /** expose member/household in session */
     async session({ session, token }) {
       (session as any).memberId = token.memberId ?? null;
       (session as any).householdId = token.householdId ?? null;

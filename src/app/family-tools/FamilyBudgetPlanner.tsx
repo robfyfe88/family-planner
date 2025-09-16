@@ -36,7 +36,7 @@ type Row = {
     label: string;
     amount: number;
     owner?: Owner;
-    recurrence?: RecurrenceUI; // UI-only; one-off -> save only this month
+    recurrence?: RecurrenceUI; 
 };
 
 type Pot = { id: string; name: string };
@@ -268,7 +268,6 @@ export default function FamilyBudgetPlanner() {
         new Date().getMonth()
     );
 
-    // scope for recurring edits
     const [scope, setScope] = useStickyState<Scope>(`${STORE_KEY}:editor:scope`, "from-now-on");
     const currentMonthIndex = new Date().getMonth();
     const isSmUp = useMedia("(min-width: 640px)", true);
@@ -291,7 +290,6 @@ export default function FamilyBudgetPlanner() {
                     label: r.label,
                     amount: r.amount,
                     owner: (r.owner ?? "joint") as Owner,
-                    // default to recurring if backend doesn't send a flag
                     recurrence: (r.recurrence === "oneoff" ? "oneoff" : "recurring") as RecurrenceUI,
                 });
 
@@ -819,8 +817,6 @@ export default function FamilyBudgetPlanner() {
     );
 }
 
-/* ---------- helpers ---------- */
-
 function sumByOwner(rows: Row[]) {
     const acc = { joint: 0, A: 0, B: 0, total: 0 };
     for (const r of rows) {
@@ -837,7 +833,6 @@ function sumByOwner(rows: Row[]) {
     };
 }
 
-/** Currency text input that doesn't flicker/reset. */
 function MoneyCell({
     value,
     onCommit,
@@ -851,7 +846,6 @@ function MoneyCell({
     const prevProp = React.useRef<number>(value);
     const selectAll = useSelectAllInputProps();
 
-    // Sync external value if it changes outside typing
     React.useEffect(() => {
         if (prevProp.current !== value) {
             prevProp.current = value;
@@ -1027,7 +1021,6 @@ function BudgetEditorCompact({
                 </div>
             </div>
 
-            {/* Mobile list */}
             <div className="sm:hidden space-y-2">
                 {filtered.map((r, idx) => (
                     <div key={r.id} className="border rounded-xl p-3">
@@ -1044,7 +1037,6 @@ function BudgetEditorCompact({
                         </div>
 
                         <div className="flex items-center gap-2">
-                            {/* Recurrence */}
                             <Select
                                 value={(r.recurrence ?? "recurring") as RecurrenceUI}
                                 onValueChange={(val) => onChange(r.id, { recurrence: val as RecurrenceUI })}
@@ -1058,7 +1050,6 @@ function BudgetEditorCompact({
                                 </SelectContent>
                             </Select>
 
-                            {/* Owner (if split) */}
                             {mode === "split" && (
                                 <Select
                                     value={(r.owner ?? "joint") as string}
@@ -1075,7 +1066,6 @@ function BudgetEditorCompact({
                                 </Select>
                             )}
 
-                            {/* Amount */}
                             <div className="ml-auto" />
                             <MoneyCell value={Number.isFinite(r.amount) ? r.amount : 0} onCommit={(v) => onAmountCommit(r.id, v)} />
 
@@ -1107,7 +1097,6 @@ function BudgetEditorCompact({
                 </div>
             </div>
 
-            {/* Desktop table */}
             <div className="hidden sm:block rounded-xl border overflow-hidden">
                 <div className="max-h-80 overflow-auto">
                     <table className="w-full text-sm">
@@ -1213,8 +1202,6 @@ function BudgetEditorCompact({
         </div>
     );
 }
-
-/* --------- mobile pots cards unchanged except text inputs ---------- */
 
 function PotsCardsMobile({
     months,

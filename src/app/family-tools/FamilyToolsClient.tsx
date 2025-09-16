@@ -24,7 +24,6 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
   const role = (session as any)?.role ?? null;
   const isCaregiver = role === "caregiver";
 
-  // caregivers: only leave + activities
   const allowedTabs = React.useMemo<TabKey[]>(
     () => (isCaregiver ? (["leave", "activities"] as TabKey[]) : ALL_TABS),
     [isCaregiver]
@@ -34,7 +33,6 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
   const [mounted, setMounted] = React.useState(false);
   const hasSyncedRef = React.useRef(false);
 
-  // Read initial tab from hash/LS but clamp to allowed
   React.useEffect(() => {
     const pickInitial = (): TabKey => {
       if (typeof window === "undefined") return allowedTabs[0];
@@ -48,9 +46,8 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
     setMounted(true);
     hasSyncedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCaregiver]); // re-run if role changes
+  }, [isCaregiver]);
 
-  // Keep URL hash + LS in sync
   React.useEffect(() => {
     if (!mounted || !hasSyncedRef.current) return;
     if (typeof window === "undefined") return;
@@ -61,7 +58,6 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
     localStorage.setItem("hearthplan:tab", tab);
   }, [tab, mounted]);
 
-  // React to manual hash changes (but clamp to allowed)
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const onHash = () => {
@@ -120,7 +116,6 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
     return <div className="max-w-6xl mx-auto px-2 sm:px-6 py-6" />;
   }
 
-  // Helpers to decide visibility
   const showBudget = allowedTabs.includes("budget");
   const showNursery = allowedTabs.includes("nursery");
 
@@ -132,7 +127,6 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
       </div>
 
       <header className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
-        {/* Mobile grid tabs */}
         <div className="block sm:hidden sticky top-0 z-30 -mx-4 px-4 py-2 bg-[var(--background)]/80 backdrop-blur">
           <nav aria-label="Planner tabs (mobile)">
             <div className="grid grid-cols-2 gap-2">
@@ -176,7 +170,6 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
           </nav>
         </div>
 
-        {/* Desktop pills */}
         <nav
           role="tablist"
           aria-label="Planner tabs"
@@ -254,8 +247,6 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
     </div>
   );
 }
-
-/* ---------------- subcomponents ---------------- */
 
 function GridTab({
   id, active, onClick, ariaControls, label, accent,

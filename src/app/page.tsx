@@ -53,7 +53,6 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              {/* Bright preview card */}
               <div className="card p-0 overflow-hidden shadow-lg">
                 <div className="bg-gradient-to-br from-[var(--accent-2)]/15 via-[var(--accent-3)]/10 to-transparent p-6">
                   <div className="text-sm opacity-80 mb-2">Preview</div>
@@ -78,7 +77,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features */}
       <section id="features" className="max-w-6xl mx-auto px-4 sm:px-6 py-12 grid lg:grid-cols-3 gap-6">
         <div className="feature-card border-t-4 border-[var(--accent-2)]">
           <h3 className="text-lg font-semibold mb-2">Smart leave planning</h3>
@@ -103,7 +101,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* How it works */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
         <div className="card">
           <h2 className="text-xl font-semibold mb-3">How it works</h2>
@@ -124,10 +121,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing (member-based) */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8 mb-20">
         <div className="grid md:grid-cols-3 gap-6">
-          {/* Free */}
           <div className="rounded-xl border p-4 bg-white">
             <div className="flex items-center justify-between">
               <span className="pill pill-slate">Free</span>

@@ -28,10 +28,8 @@ model HolidayEvent {
 model Household {
   id                   String             @id @default(cuid())
   name                 String
-  // NEW
   subscriptionTier     SubscriptionTier   @default(free)
   subscriptionStatus   SubscriptionStatus @default(active)
-  // Optional billing fields (handy later)
   billingProvider      String? // "stripe"
   stripeCustomerId     String?
   stripeSubscriptionId String?
@@ -105,7 +103,7 @@ model ParentPrefs {
   offDaysBitmask   Int     @default(0)
   allowanceDays    Int     @default(20)
   getsBankHolidays Boolean @default(false)
-  watchDaysBitmask Int     @default(0) // ✅ NEW
+  watchDaysBitmask Int     @default(0)
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 }

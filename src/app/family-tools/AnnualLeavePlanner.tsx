@@ -32,7 +32,6 @@ import {
   deleteHolidayEvent,
 } from "../app/annual/actions";
 
-/* ---------- types (aligned with server) ---------- */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type Region = "england-and-wales" | "scotland" | "northern-ireland";
 export type OverrideCode =
@@ -94,7 +93,6 @@ type EventDraft = {
   allDay: boolean;
 };
 
-/* ---------- utils ---------- */
 const weekdayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const palette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6D4", "#84CC16"];
 
@@ -136,7 +134,6 @@ async function fetchBankHolidays(): Promise<{
   };
 }
 
-/* ---------- component ---------- */
 export default function AnnualLeavePlanner({ initial }: { initial: AnnualData }) {
   const [isPending, start] = useTransition();
   const { data: session } = useSession();
@@ -207,7 +204,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     start(async () => { await toggleClosureAction(id); });
   };
 
-  // overrides never toggle closures
   const setOverride = (dateISO: string, code: OverrideCode) => {
     setAppliedPlan((prev) => {
       const next = (prev ? [...prev] : []);
@@ -253,7 +249,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
   const isToday = (d: Date) => ymd(d) === ymd(new Date());
   const withinMonth = (d: Date) => sameMonth(d, anchor);
 
-  /* ---------- Stats ---------- */
   const stats = useMemo(() => {
     const totalA = parentA?.allowance ?? 0;
     const totalB = parentB?.allowance ?? 0;
@@ -268,7 +263,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         (p) => p.coverage.type === "leave" && (p.coverage.who === "B" || p.coverage.who === "both")
       ).length ?? 0;
 
-    // unified uncovered logic (matches cells)
     const stillUncovered = closures.filter((id) => {
       const d = parseISO(id);
       const w = d.getUTCDay() as Weekday;
@@ -303,7 +297,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     };
   }, [appliedPlan, closures, parentA, parentB, settings.skipWeekends, bankHolidaySet]);
 
-  /* ---------- Events map ---------- */
   const eventsByDate = React.useMemo(() => {
     const m = new Map<string, HolidayEventDTO[]>();
     for (const ev of holidayEvents) {
@@ -321,7 +314,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     return m;
   }, [holidayEvents]);
 
-  /* ---------- Add/Edit event helpers (missing before) ---------- */
   const openAddDialogFor = (dateISO: string) => {
     setEventDraft({
       title: "",
@@ -348,7 +340,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     setAddOpen(true);
   };
 
-  /* ---------- Guard: ignore clicks from inner controls ---------- */
   const shouldIgnoreCellClick = (e: React.MouseEvent) => {
     const el = e.target as HTMLElement | null;
     return !!el?.closest("[data-avoid-toggle]");
@@ -356,7 +347,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl sm:text-2xl font-semibold">Annual Leave Planner</h2>
         {!isCaregiver && (
@@ -367,7 +357,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         )}
       </div>
 
-      {/* Parents + Controls */}
       {!isCaregiver && (
         <section className="card space-y-4">
           <div className="grid md:grid-cols-2 gap-6">
@@ -448,7 +437,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         </section>
       )}
 
-      {/* Stats */}
       <section className="card">
         <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
           <Stat label={`${parentA?.name ?? "Parent A"} leave (used/total)`} value={`${stats.usedA}/${stats.totalA}`} />
@@ -467,7 +455,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         )}
       </section>
 
-      {/* Calendar */}
       <section className="card">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
@@ -480,7 +467,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
           <MonthPicker anchor={anchor} onChange={(d) => setAnchor(new Date(d.getFullYear(), d.getMonth(), 1))} />
         </div>
 
-        {/* Desktop grid */}
         <div className="grid grid-cols-7 gap-px bg-[var(--border-color)] p-1 overflow-hidden select-none touch-none  hidden md:grid">
           {cells.map((d) => {
             const id = ymd(d);
@@ -577,7 +563,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                       {parentB && <DropdownMenuItem data-avoid-toggle onClick={() => setOverride(id, "off:B")}>Mark {parentB.name} off (no leave)</DropdownMenuItem>}
                       {parentA && parentB && <DropdownMenuItem data-avoid-toggle onClick={() => setOverride(id, "off:both")}>Mark both off (no leave)</DropdownMenuItem>}
 
-                      {/* Caregivers */}
                       {initial.caregivers.length > 0 && (
                         <>
                           <DropdownMenuSeparator />
@@ -590,7 +575,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                         </>
                       )}
 
-                      {/* Holiday events on this date */}
                       {eventsToday.length > 0 && (
                         <>
                           <DropdownMenuSeparator />
@@ -647,7 +631,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
           })}
         </div>
 
-        {/* Mobile list */}
         <div className="block md:hidden">
           <MobileMonthList
             days={monthDays}
@@ -696,7 +679,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
           {eventDraft && (
             <div className="space-y-4 sm:space-y-6">
-              {/* Title + Color */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="ev-title">Title</Label>
@@ -723,7 +705,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                 </div>
               </div>
 
-              {/* Dates */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="ev-start">Start</Label>
@@ -749,7 +730,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                 </div>
               </div>
 
-              {/* All-day */}
               <label className="flex items-center gap-2">
                 <Checkbox
                   id="allDay"
@@ -761,7 +741,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                 <span className="text-sm">All day</span>
               </label>
 
-              {/* Notes */}
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ev-notes">Notes</Label>
                 <Textarea
@@ -858,8 +837,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
     </div>
   );
 }
-
-/* ---------- subcomponents ---------- */
 
 function ParentCard({
   label,
@@ -1073,17 +1050,14 @@ function MobileMonthList({
 
           const cov = planByDate.get(id)?.coverage;
 
-          // Rule-based day-off hints
           const offAByRule =
             !!parentA && (parentA.offDays.includes(w) || (isBH && parentA.getsBankHolidays));
           const offBByRule =
             !!parentB && (parentB.offDays.includes(w) || (isBH && parentB.getsBankHolidays));
           const coveredByRule = offAByRule || offBByRule;
 
-          // Uncovered logic (matches desktop)
           const isUncovered = closed && !coveredByRule && (!cov || cov.type === "none");
 
-          // Who’s covering (chips)
           const chips: React.ReactNode[] = [];
           if (cov?.type === "leave") {
             if ((cov.who === "A" || cov.who === "both") && parentA)
@@ -1118,7 +1092,6 @@ function MobileMonthList({
 
           const eventsToday = eventsByDate.get(id) ?? [];
 
-          // Button acts as status: “School closed” vs “Set school closure”
           const closureLabel = closed ? "School closed" : "Set school closure";
           const closureVariant = closed ? "default" : "outline";
 
@@ -1131,7 +1104,6 @@ function MobileMonthList({
                 ${isToday(d) ? "ring-1 ring-[var(--accent-2)]" : ""}
               `}
             >
-              {/* Cog in the top-right, bigger, always clickable */}
               <div className="absolute top-2 right-2 z-50">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1212,7 +1184,6 @@ function MobileMonthList({
                 </DropdownMenu>
               </div>
 
-              {/* Date column */}
               <div className="flex flex-col items-center pt-1">
                 <div className="text-[16px] opacity-70">{weekday}</div>
                 <div
@@ -1224,9 +1195,7 @@ function MobileMonthList({
                 </div>
               </div>
 
-              {/* Content column — uniform rows */}
               <div className="flex flex-col min-w-0">
-                {/* Row 1: chips (fixed min-height) */}
                 <div className="flex flex-wrap gap-1 min-h-[22px]">{chips}</div>
                 <div className="mt-1 flex flex-wrap gap-2 min-h-[24px]">
                   {eventsToday.map((ev) => (
@@ -1245,7 +1214,6 @@ function MobileMonthList({
                     </button>
                   ))}
                 </div>
-                {/* Row 2: informational badges (fixed min-height) */}
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[16px] opacity-80 min-h-[18px]">
                   {isBH && <span className="badge badge-teal">Bank hol.</span>}
                   {isUncovered && (
@@ -1254,11 +1222,6 @@ function MobileMonthList({
                     </span>
                   )}
                 </div>
-
-                {/* Row 3: events (larger chips, fixed min-height) */}
-
-
-                {/* Row 4: closure action (acts as status) */}
                 {!isCaregiver && (
                   <div className="mt-2">
                     <Button

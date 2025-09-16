@@ -50,7 +50,6 @@ function formatDay(iso: string) {
   return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
-// ---------- Nursery snapshot (only used for non-caregivers) ----------
 async function getNurserySnapshot() {
   const householdId = await getHouseholdIdOrThrow();
 
@@ -236,16 +235,13 @@ export default async function DashboardShell() {
   const role = (session as any)?.role ?? null;
   const isCaregiver = role === "caregiver";
 
-  // Always needed for header + leave + activities blocks
   const sPromise = getDashboardData();
 
-  // Only fetch heavy stuff for non-caregivers
   const budgetPromise = isCaregiver ? Promise.resolve(null) : getBudgetInsights();
   const nurseryPromise = isCaregiver ? Promise.resolve(null) : getNurserySnapshot();
 
   const [s, budget, nursery] = await Promise.all([sPromise, budgetPromise, nurseryPromise]);
 
-  // Budget-derived values (only when not caregiver)
   const monthLabel = budget?.monthLabel ?? "This month";
   const plannedIncomeStr = budget?.plannedIncomeStr ?? "£0";
   const plannedExpenseStr = budget?.plannedExpenseStr ?? "£0";
@@ -297,9 +293,6 @@ export default async function DashboardShell() {
         </div>
       </div>
 
-      {/* ====================== */}
-      {/* HIDE for caregivers    */}
-      {/* ====================== */}
       {!isCaregiver && (
         <Section title="Budget overview" ctaHref="/app#budget" ctaLabel="Open Family Budget" tone="violet">
           <div className="grid gap-4">
@@ -327,9 +320,6 @@ export default async function DashboardShell() {
         </Section>
       )}
 
-      {/* ====================== */}
-      {/* HIDE for caregivers    */}
-      {/* ====================== */}
       {!isCaregiver && (
         <Section
           title="Childcare snapshot"
@@ -390,7 +380,6 @@ export default async function DashboardShell() {
         </Section>
       )}
 
-      {/* Always visible */}
       <Section title="Annual leave & closures" ctaHref="/app#leave" ctaLabel="Open Annual Leave" tone="amber">
         <div className="grid md:grid-cols-2 gap-4">
           <div>
@@ -424,7 +413,6 @@ export default async function DashboardShell() {
         </div>
       </Section>
 
-      {/* Always visible */}
       <Section title="Activities snapshot" ctaHref="/app#activities" ctaLabel="Open Activities" tone="blue">
         <div className="grid lg:grid-cols-2 gap-4">
           <div>

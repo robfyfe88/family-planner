@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     shortcut: [{ url: "/favicon-32x32.png" }],
   },
-  openGraph: { /* ... */ },
+  openGraph: { },
   twitter: { card: "summary_large_image", title: "HearthPlan" },
 };
 
@@ -29,7 +29,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ToasterProvider />
-
         <Providers>{children}</Providers>
       </body>
     </html>

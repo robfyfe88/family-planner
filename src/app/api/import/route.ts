@@ -1,11 +1,9 @@
-// src/app/api/import/route.ts
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-// ---- Schemas ----
 const BudgetSchema = z.object({
   mode: z.string().optional(),
   parentAName: z.string().optional(),
@@ -13,13 +11,13 @@ const BudgetSchema = z.object({
   incomes: z.array(z.object({
     id: z.string(),
     label: z.string(),
-    amount: z.number(), // monthly amount in £ from local
+    amount: z.number(),
     owner: z.string().optional(),
   })).default([]),
   expenses: z.array(z.object({
     id: z.string(),
     label: z.string(),
-    amount: z.number(), // monthly amount in £ from local
+    amount: z.number(), 
     owner: z.string().optional(),
   })).default([]),
   pots: z.array(z.object({
@@ -28,7 +26,7 @@ const BudgetSchema = z.object({
   })).default([]),
   savingsYear: z.array(z.object({
     month: z.string(),
-    values: z.record(z.string(), z.number()), // { potId: amount£ }
+    values: z.record(z.string(), z.number()), 
   })).optional(),
 }).optional();
 
@@ -76,7 +74,6 @@ const LegacySchema = z.object({
     notes: z.string().optional(),
   })).default([]),
 
-  // NEW: budget
   budget: BudgetSchema,
 });
 
@@ -103,20 +100,18 @@ export async function POST(req: Request) {
     }
     const data = parsed.data;
 
-    // ---- Household (create or reuse by name) ----
     const existing = await prisma.household.findFirst({ where: { name: data.householdName }, select: { id: true } });
     const hh = existing
       ? await prisma.household.update({ where: { id: existing.id }, data: {} })
       : await prisma.household.create({ data: { name: data.householdName } });
 
-    // ---- Members ----
     const memberMap = new Map<string, string>();
     for (const m of data.members) {
       const created = await prisma.member.create({
         data: {
           householdId: hh.id,
           name: m.name,
-          role: m.role, // "parent" | "child"
+          role: m.role, 
           shortLabel: m.shortLabel ?? null,
           color: m.color ?? null,
           slot: m.slot ?? null,
@@ -125,7 +120,6 @@ export async function POST(req: Request) {
       memberMap.set(m.name, created.id);
     }
 
-    // ---- Activities + Schedules ----
     const activityMap = new Map<string, string>();
     for (const a of data.activities) {
       const act = await prisma.activity.create({
@@ -154,7 +148,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // ---- Overrides ----
     if (data.overrides?.length) {
       await prisma.override.createMany({
         data: data.overrides.map((o) => ({
@@ -170,7 +163,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // ---- School days (closures) ----
     for (const sd of data.schoolDays) {
       try {
         await prisma.schoolDay.upsert({
@@ -189,12 +181,10 @@ export async function POST(req: Request) {
           },
         });
       } catch (e) {
-        // Continue rather than failing entire import
         console.error("SchoolDay upsert failed for", sd.date, e);
       }
     }
 
-    // ---- Leaves ----
     if (data.leaves?.length) {
       await prisma.leave.createMany({
         data: data.leaves.map((l) => ({
@@ -208,14 +198,11 @@ export async function POST(req: Request) {
       });
     }
 
-    // ---- Budget (NEW) ----
     if (data.budget) {
       const now = new Date();
       const month = now.getMonth() + 1;
       const year = now.getFullYear();
 
-      // Create categories for each income/expense label
-      // (idempotent per (householdId, name))
       const ensureCategory = async (name: string, flow: "income" | "expense") => {
         const existing = await prisma.budgetCategory.findFirst({
           where: { householdId: hh.id, name },
@@ -233,7 +220,6 @@ export async function POST(req: Request) {
         });
       };
 
-      // Planned budgets (monthly) from local amounts (£ -> pence)
       for (const inc of data.budget.incomes ?? []) {
         const cat = await ensureCategory(inc.label, "income");
         await prisma.budgetMonthly.upsert({
@@ -282,7 +268,6 @@ export async function POST(req: Request) {
         });
       }
 
-      // Pots
       for (const p of data.budget.pots ?? []) {
         await prisma.savingsPot.upsert({
           where: { householdId_name: { householdId: hh.id, name: p.name } },
@@ -290,13 +275,6 @@ export async function POST(req: Request) {
           update: {},
         });
       }
-
-      // (Optional) If you want to apply savingsYear -> PotTransfer balances, you can:
-      // const potByName = new Map(
-      //   (await prisma.savingsPot.findMany({ where: { householdId: hh.id } }))
-      //     .map(p => [p.name, p] as const)
-      // );
-      // // You can add logic here to seed historical transfers if desired.
     }
 
     return NextResponse.json({ ok: true, householdId: hh.id });

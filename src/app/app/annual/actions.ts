@@ -3,9 +3,6 @@
 import { prisma } from "@/lib/prisma";
 import { getOrCreateHouseholdForUser as getHouseholdIdOrThrow } from "@/lib/household";
 
-/* =========================================================
-   Shared types
-   ========================================================= */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type Region = "england-and-wales" | "scotland" | "northern-ireland";
 
@@ -43,8 +40,8 @@ export type CaregiverDTO = {
 export type HolidayEventDTO = {
     id: string;
     title: string;
-    startDate: string; // yyyy-mm-dd
-    endDate: string;   // yyyy-mm-dd
+    startDate: string; 
+    endDate: string;   
     color: string | null;
     notes: string | null;
     allDay: boolean;
@@ -64,9 +61,6 @@ export type AnnualData = {
     holidayEvents: HolidayEventDTO[];
 };
 
-/* =========================
-   Small utils
-   ========================= */
 const weekdayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 const ymd = (d: Date) =>
@@ -105,9 +99,6 @@ type ParentPrefsRow = {
     getsBankHolidays: boolean;
 };
 
-/* =========================
-   READ & AGGREGATE
-   ========================= */
 export async function fetchAnnualData(): Promise<AnnualData> {
     const householdId = await getHouseholdIdOrThrow();
 
@@ -126,7 +117,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
     const parents = members.filter((m) => m.role === "parent").slice(0, 2);
     const caregivers = members.filter((m) => m.role === "caregiver");
 
-    // Parent prefs
     const prefsRows = await prisma.parentPrefs.findMany({
         where: { memberId: { in: parents.map((p) => p.id) } },
         select: {
@@ -158,7 +148,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
         color: c.color,
     }));
 
-    // Closures
     const closures = await prisma.schoolDay.findMany({
         where: { householdId, isSchoolOpen: false },
         select: { date: true },
@@ -166,7 +155,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
     });
     const closureISO = closures.map((row) => ymd(row.date));
 
-    // Manual & auto artifacts
     const leaves = await prisma.leave.findMany({
         where: { householdId },
         select: { memberId: true, startDate: true, endDate: true, type: true },
@@ -177,7 +165,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
         select: { date: true, caregiverId: true, isAuto: true },
     });
 
-    // Holiday events
     const holidayEventsRows = await prisma.holidayEvent.findMany({
         where: { householdId },
         orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
@@ -195,7 +182,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
     const parentA = parentDTOs[0] ?? null;
     const parentB = parentDTOs[1] ?? null;
 
-    // Build quick lookup for manual "off" (watch)
     const manualWatchA = new Set<string>();
     const manualWatchB = new Set<string>();
     if (parentA || parentB) {
@@ -214,7 +200,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
 
     const relevantDates = new Set<string>(closureISO);
 
-    // include all leave/watch date ranges
     for (const L of leaves) {
         let d = new Date(L.startDate);
         const end = new Date(L.endDate);
@@ -224,20 +209,14 @@ export async function fetchAnnualData(): Promise<AnnualData> {
         }
     }
 
-    // include all care assignment dates (manual or auto)
     for (const ca of care) relevantDates.add(ymd(ca.date));
 
-
-
-    // Build plan only for closure days
-    // Build plan for every relevant date (not just closures)
     const plan: DayPlanDTO[] = Array.from(relevantDates)
         .sort()
         .map((date) => {
             const d = parseISO(date);
             const w = d.getUTCDay() as Weekday;
 
-            // Manual leave?
             const manualA = !!(parentA && leaves.some(
                 (L) =>
                     L.memberId === parentA.memberId &&
@@ -253,10 +232,8 @@ export async function fetchAnnualData(): Promise<AnnualData> {
             const watchA = parentA ? manualWatchA.has(date) : false;
             const watchB = parentB ? manualWatchB.has(date) : false;
 
-            // Manual care on this date?
             const manualCare = care.find((c) => !c.isAuto && ymd(c.date) === date);
 
-            // Auto artifacts (only if no manual present)
             const autoA = !!(parentA && leaves.some(
                 (L) =>
                     L.memberId === parentA.memberId &&
@@ -272,7 +249,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
             const autoCare = care.find((c) => c.isAuto && ymd(c.date) === date);
 
             let coverage: CoverageDTO = { type: "none" };
-            // PRECEDENCE: manual leave > manual care > manual off > auto leave > auto care
             if (manualA && manualB) coverage = { type: "leave", who: "both" };
             else if (manualA) coverage = { type: "leave", who: "A" };
             else if (manualB) coverage = { type: "leave", who: "B" };
@@ -303,9 +279,6 @@ export async function fetchAnnualData(): Promise<AnnualData> {
     };
 }
 
-/* =========================
-   Basics
-   ========================= */
 export async function updateMemberBasics(
     memberId: string,
     patch: { name?: string; shortLabel?: string | null; color?: string | null }
@@ -358,9 +331,6 @@ export async function upsertParentPrefs(input: {
     });
 }
 
-/* =========================
-   School closures
-   ========================= */
 export async function toggleClosure(dateISO: string) {
     const householdId = await getHouseholdIdOrThrow();
     const date = parseISO(dateISO);
@@ -387,9 +357,6 @@ export async function clearAllSchoolClosures() {
     await prisma.schoolDay.deleteMany({ where: { householdId, isSchoolOpen: false } });
 }
 
-/* =========================
-   Manual overrides (never toggle closures)
-   ========================= */
 export async function setOverride(dateISO: string, code: OverrideCode) {
     const householdId = await getHouseholdIdOrThrow();
     const date = parseISO(dateISO);
@@ -403,7 +370,6 @@ export async function setOverride(dateISO: string, code: OverrideCode) {
     const parentA = parents[0];
     const parentB = parents[1];
 
-    // Remove any MANUAL artifacts for that day (keep AUTO intact)
     await prisma.careAssignment.deleteMany({
         where: { householdId, date, isAuto: false },
     });
@@ -418,7 +384,6 @@ export async function setOverride(dateISO: string, code: OverrideCode) {
 
     if (code === "clear") return;
 
-    // Manual leave
     if (code === "A" && parentA) {
         await prisma.leave.create({
             data: { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_override" },
@@ -441,7 +406,6 @@ export async function setOverride(dateISO: string, code: OverrideCode) {
         return;
     }
 
-    // Manual "off" (watch) – informational
     if (code === "off:A" && parentA) {
         await prisma.leave.create({
             data: { householdId, memberId: parentA.id, startDate: date, endDate: date, type: "annual_watch_override" },
@@ -464,7 +428,6 @@ export async function setOverride(dateISO: string, code: OverrideCode) {
         return;
     }
 
-    // Manual care
     if (code.startsWith("C:")) {
         const caregiverId = code.slice(2);
         await prisma.careAssignment.upsert({
@@ -476,9 +439,6 @@ export async function setOverride(dateISO: string, code: OverrideCode) {
     }
 }
 
-/* =========================
-   Auto-Plan (clear AUTO only; respect manual)
-   ========================= */
 
 async function buildBankHolidaySet(dbRegion: string): Promise<Set<string>> {
     const region: Region = fromDbRegion(dbRegion);
@@ -534,7 +494,6 @@ export async function autoPlanAndSave() {
     });
     const closureISO = closureRows.map((row) => ymd(row.date));
 
-    // Snapshot manual decisions
     const manualLeaves = await prisma.leave.findMany({
         where: { householdId, type: { in: ["annual_override", "annual_watch_override"] } },
         select: { memberId: true, startDate: true, endDate: true, type: true },
@@ -545,7 +504,6 @@ export async function autoPlanAndSave() {
     });
     const manualCareSet = new Set(manualCare.map((c) => ymd(c.date)));
 
-    // Build skip set for any manual leave/watch
     const manualLeaveDates = new Set<string>();
     for (const L of manualLeaves) {
         let d = new Date(L.startDate);
@@ -558,7 +516,6 @@ export async function autoPlanAndSave() {
 
     const bankHolidays = await buildBankHolidaySet(settings.region);
 
-    // Working list of closure dates to fill
     const fillDates = closureISO
         .filter((id) => !manualLeaveDates.has(id) && !manualCareSet.has(id))
         .filter((id) => (settings.skipWeekends ? ![0, 6].includes(parseISO(id).getUTCDay()) : true));
@@ -581,11 +538,9 @@ export async function autoPlanAndSave() {
         }
         : null;
 
-    // 1) Clear previous AUTO artifacts only
     await prisma.leave.deleteMany({ where: { householdId, type: "annual_auto" } });
     await prisma.careAssignment.deleteMany({ where: { householdId, isAuto: true } });
 
-    // 2) Dates already covered by off rules
     const coveredByRules = new Set<string>();
     for (const id of fillDates) {
         const d = parseISO(id);
@@ -596,10 +551,8 @@ export async function autoPlanAndSave() {
         if (aOff || bOff) coveredByRules.add(id);
     }
 
-    // 3) Remaining uncovered closure dates
     const remaining = fillDates.filter((id) => !coveredByRules.has(id));
 
-    // Group consecutive remaining dates into blocks
     const remainingBlocks: string[][] = (() => {
         const blocks: string[][] = [];
         const s = [...remaining].sort();
@@ -620,7 +573,6 @@ export async function autoPlanAndSave() {
 
     const leaveCreates: { memberId: string; start: string; end: string }[] = [];
 
-    // 4) Joint days first
     let jointRemaining = B ? (settings.jointDays ?? 0) : 0;
     if (A && B && jointRemaining > 0) {
         for (const block of remainingBlocks) {
@@ -638,7 +590,6 @@ export async function autoPlanAndSave() {
         }
     }
 
-    // 5) Single-parent fills on remaining blocks
     for (const block of remainingBlocks) {
         if (!block.length) continue;
         const L = block.length;
@@ -672,7 +623,6 @@ export async function autoPlanAndSave() {
         }
     }
 
-    // 6) Persist leaves as AUTO
     for (const g of leaveCreates) {
         await prisma.leave.create({
             data: {
@@ -685,22 +635,15 @@ export async function autoPlanAndSave() {
         });
     }
 
-    // Return fresh plan snapshot
     return fetchAnnualData();
 }
 
-/* =========================
-   CLEAR AUTO PLAN
-   ========================= */
 export async function clearAutoPlan() {
     const householdId = await getHouseholdIdOrThrow();
     await prisma.leave.deleteMany({ where: { householdId, type: "annual_auto" } });
     await prisma.careAssignment.deleteMany({ where: { householdId, isAuto: true } });
 }
 
-/* =========================
-   HOLIDAY EVENTS CRUD
-   ========================= */
 export async function listHolidayEvents(): Promise<HolidayEventDTO[]> {
     const householdId = await getHouseholdIdOrThrow();
     const rows = await prisma.holidayEvent.findMany({
