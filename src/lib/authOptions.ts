@@ -45,6 +45,15 @@ async function findCaregiverByEmail(email?: string | null) {
   });
 }
 
+async function findMemberByInviteEmail(email?: string | null) {
+  const e = norm(email);
+  if (!e) return null;
+  return prisma.member.findFirst({
+    where: { inviteEmail: e }, // matches parent OR caregiver
+    select: { id: true, role: true, householdId: true, name: true, userId: true, inviteEmail: true },
+  });
+}
+
 export const authOptions: NextAuthOptions = {
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
@@ -55,6 +64,7 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
 
+    // Keep caregiver legacy path (optional to keep)
     Credentials({
       id: "caregiver",
       name: "Caregiver",
@@ -63,6 +73,35 @@ export const authOptions: NextAuthOptions = {
         const cg = await findCaregiverByEmail(creds?.email);
         if (!cg) return null;
         return { id: `cg_${cg.id}`, name: cg.name ?? "Caregiver", email: norm(creds?.email) };
+      },
+    }),
+
+    // NEW: Email sign-in for parent OR caregiver via inviteEmail
+    Credentials({
+      id: "household",
+      name: "Email",
+      credentials: { email: { label: "Email", type: "email" } },
+      async authorize(creds) {
+        const member = await findMemberByInviteEmail(creds?.email);
+        if (!member) return null;
+
+        // For parents: if userId is empty, set it to email for legacy support
+        if (member.role === "parent") {
+          const emailN = norm(creds?.email);
+          if (!member.userId || member.userId !== emailN) {
+            await prisma.member.update({
+              where: { id: member.id },
+              data: { userId: emailN },
+            });
+          }
+        }
+
+        // Return a minimal user object; role is set in jwt callback
+        return {
+          id: `${member.role === "parent" ? "p" : "cg"}_${member.id}`,
+          name: member.name ?? (member.role === "parent" ? "Parent" : "Caregiver"),
+          email: norm(creds?.email),
+        };
       },
     }),
   ],
@@ -88,7 +127,7 @@ export const authOptions: NextAuthOptions = {
         return true;
       }
 
-      if (provider === "caregiver") return true;
+      if (provider === "caregiver" || provider === "household") return true;
 
       return false;
     },
@@ -107,6 +146,7 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
+      // Caregiver legacy path
       if (account?.provider === "caregiver" || (token as any).role === "caregiver") {
         const cg = await findCaregiverByEmail(email);
         if (cg) {
@@ -117,6 +157,18 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
+      // NEW: Household email path (parent OR caregiver by inviteEmail)
+      if (account?.provider === "household" || (token as any).role == null) {
+        const m = await findMemberByInviteEmail(email);
+        if (m) {
+          token.memberId = m.id;
+          token.householdId = m.householdId;
+          token.role = m.role; // "parent" or "caregiver"
+          return token;
+        }
+      }
+
+      // Fallback: try inviteEmail mapping if we somehow got here
       if (!token.householdId && email) {
         const m = await prisma.member.findFirst({
           where: { inviteEmail: email },

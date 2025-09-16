@@ -12,6 +12,24 @@ import { FcGoogle } from "react-icons/fc";
 export default function SignInButton() {
   const [open, setOpen] = React.useState(false);
   const [email, setEmail] = React.useState("");
+  const [loading, setLoading] = React.useState<"google" | "email" | null>(null);
+
+  const handleGoogle = async () => {
+    setLoading("google");
+    await signIn("google", { callbackUrl: "/app/dashboard" });
+    setLoading(null);
+  };
+
+  const handleEmail = async () => {
+    if (!email) return;
+    setLoading("email");
+    await signIn("household", {
+      email,
+      callbackUrl: "/app/dashboard",
+      redirect: true,
+    });
+    setLoading(null);
+  };
 
   return (
     <>
@@ -22,7 +40,8 @@ export default function SignInButton() {
           <DialogHeader>
             <DialogTitle>Sign in</DialogTitle>
             <DialogDescription>
-              Parents use Google. Caregivers enter the email the parents saved for you.
+              Parents can use Google <span className="whitespace-nowrap">(quick)</span> or enter an email.
+              Caregivers use the email the household owner invited you with.
             </DialogDescription>
           </DialogHeader>
 
@@ -30,10 +49,11 @@ export default function SignInButton() {
             <Button
               variant="outline"
               className="w-full gap-2"
-              onClick={() => signIn("google", { callbackUrl: "/app/dashboard" })}
+              onClick={handleGoogle}
+              disabled={loading !== null}
             >
               <FcGoogle className="text-xl" />
-              Continue with Google (parent)
+              {loading === "google" ? "Signing in..." : "Continue with Google (parent)"}
             </Button>
 
             <div className="text-xs text-muted-foreground text-center">— or —</div>
@@ -41,21 +61,17 @@ export default function SignInButton() {
             <div className="grid gap-2">
               <Input
                 type="email"
-                placeholder="caregiver@email.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={loading !== null}
               />
               <Button
                 className="w-full"
-                onClick={() =>
-                  signIn("caregiver", {
-                    email,
-                    callbackUrl: "/app/dashboard",
-                    redirect: true,
-                  })
-                }
+                onClick={handleEmail}
+                disabled={!email || loading !== null}
               >
-                Continue as caregiver
+                {loading === "email" ? "Checking email..." : "Continue with email (parent or caregiver)"}
               </Button>
             </div>
           </div>
