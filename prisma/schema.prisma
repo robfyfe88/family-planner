@@ -8,6 +8,88 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
+/**
+ * ---------- Planner v2 additions ----------
+ */
+
+enum RecurrenceKind {
+  none
+  weekly
+  biweekly
+  every_n_weeks
+}
+
+model PlannerActivity {
+  id          String @id @default(cuid())
+  householdId String
+  createdById String
+
+  // UI fields
+  type  String // "Sports" | "Clubs" | "Lessons" | "Appointments" | "Event" | "Other"
+  name  String
+  notes String? @db.Text
+
+  // date-only semantics (store as DateTime at midnight UTC)
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  // recurrence
+  recurrenceKind RecurrenceKind
+  daysOfWeek     Int[] // 0..6; empty if kind === none
+  intervalWeeks  Int? // only for every_n_weeks
+
+  // money
+  costPerSession Decimal @db.Decimal(10, 2)
+
+  // relations
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy Member    @relation("CreatedByMember", fields: [createdById], references: [id], onDelete: Cascade)
+
+  members     PlannerActivityMember[]
+  budgetLinks PlannerBudgetLink[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([householdId, startDate, endDate])
+}
+
+model PlannerActivityMember {
+  activityId String
+  memberId   String
+
+  activity PlannerActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  member   Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([activityId, memberId])
+}
+
+model PlannerBudgetLink {
+  id         String          @id @default(cuid())
+  activityId String
+  activity   PlannerActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  year   Int
+  month  Int // 1..12
+  amount Decimal @db.Decimal(10, 2) // sessionsInMonth * costPerSession
+
+  category String // e.g. "Kids Clubs"
+  label    String // e.g. "Rugby club (Alistair)"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([activityId, year, month])
+  @@index([householdId, year, month])
+}
+
+/**
+ * ---------- Existing models ----------
+ */
+
 model HolidayEvent {
   id          String   @id @default(cuid())
   householdId String
@@ -52,6 +134,10 @@ model Household {
   RecurringTemplate RecurringTemplate[]
   PotMonthly        PotMonthly[]
 
+  // Planner v2
+  plannerActivities  PlannerActivity[]
+  plannerBudgetLinks PlannerBudgetLink[]
+
   budgetLines         BudgetLine[]         @relation("HouseholdBudgetLines")
   budgetLineOverrides BudgetLineOverride[] @relation("HouseholdBudgetLineOverrides")
 
@@ -65,18 +151,23 @@ model Household {
 }
 
 model Member {
-  id             String           @id @default(cuid())
-  householdId    String
-  name           String
-  role           MemberRole
-  shortLabel     String?
-  color          String?
-  slot           String?
-  userId         String?          @unique
-  inviteEmail    String?
+  id          String     @id @default(cuid())
+  householdId String
+  name        String
+  role        MemberRole
+  shortLabel  String?
+  color       String?
+  slot        String?
+  userId      String?    @unique
+  inviteEmail String?
+
   household      Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
   ParentPrefs    ParentPrefs[]
   CareAssignment CareAssignment[]
+
+  // Planner v2 back-relations
+  createdPlannerActivities PlannerActivity[]       @relation("CreatedByMember")
+  activityMemberships      PlannerActivityMember[]
 
   @@index([householdId])
   @@index([inviteEmail])
@@ -199,13 +290,14 @@ model NurseryDayPlan {
 }
 
 model Activity {
-  id          String     @id @default(cuid())
+  id          String  @id @default(cuid())
   householdId String
   name        String
   category    String?
   location    String?
-  household   Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  schedules   Schedule[]
+
+  household Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  schedules Schedule[]
 
   @@index([householdId])
 }
@@ -220,8 +312,9 @@ model Schedule {
   rrule       String?
   startDate   DateTime?
   endDate     DateTime?
-  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  activity    Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  activity  Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
 
   @@index([householdId])
   @@index([activityId])
@@ -237,7 +330,8 @@ model Override {
   newStartTime String?
   newEndTime   String?
   notes        String?
-  household    Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
   @@index([householdId])
   @@index([memberId])
@@ -251,40 +345,42 @@ enum OverrideStatus {
 }
 
 model SchoolDay {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   householdId  String
   date         DateTime
-  isSchoolOpen Boolean   @default(true)
+  isSchoolOpen Boolean  @default(true)
   label        String?
-  household    Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
   @@unique([householdId, date])
   @@index([householdId])
 }
 
 model Leave {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   householdId String
   memberId    String?
   startDate   DateTime
   endDate     DateTime
   type        String?
   notes       String?
-  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
   @@index([householdId])
   @@index([memberId])
 }
 
-// --- Budget core ---
+/**
+ * ---------- Budget core ----------
+ */
 
 enum MoneyFlow {
   income
   expense
   transfer
 }
-
-// transaction direction
 
 enum Recurrence {
   none
@@ -311,10 +407,10 @@ model BudgetCategory {
   PotAllocation     PotAllocation[]
   RecurringTemplate RecurringTemplate[]
 
-  // NEW back-relation for planner
+  // Back-relation for planner budget lines
   budgetLines BudgetLine[] @relation("CategoryBudgetLines")
 
-  @@unique([householdId, name]) // prevent duplicates per household
+  @@unique([householdId, name])
   @@index([householdId])
 }
 
@@ -324,7 +420,7 @@ model BudgetMonthly {
   categoryId   String
   month        Int // 1..12
   year         Int
-  plannedPence Int // planned amount for this category in pence
+  plannedPence Int // planned amount in pence
 
   household Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
   category  BudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -368,8 +464,8 @@ model SavingsPot {
   id           String @id @default(cuid())
   householdId  String
   name         String
-  targetPence  Int? // optional goal
-  balancePence Int    @default(0) // derived if you prefer; stored for speed
+  targetPence  Int?
+  balancePence Int    @default(0)
 
   household         Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
   allocations       PotAllocation[]
@@ -457,7 +553,9 @@ model RecurringTemplate {
   @@index([householdId, nextRunDate])
 }
 
-// --- NEW planner enums/models ---
+/**
+ * ---------- Budget planner lines ----------
+ */
 
 enum BudgetOwner {
   joint

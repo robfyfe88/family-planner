@@ -13,19 +13,27 @@ import {
 } from "@/components/ui/select";
 import { CalendarPlus, BrushCleaning, Trash2, Pencil } from "lucide-react";
 
+// === server actions ===
+import {
+    listMembersForHousehold,
+    listPlannerActivities,
+    upsertPlannerActivity,
+    deletePlannerActivity,
+    type ActivityDTO,
+} from "../app/activities/actions";
+
 type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 interface Member {
     id: string;
-    role: "parent" | "child";
+    role: "parent" | "child" | "caregiver";
     slot?: "p1" | "p2";
     name: string;
-    shortLabel: string;
-    color: string;
+    shortLabel: string | null;
+    color: string | null;
 }
 
 type ActivityType = "Sports" | "Clubs" | "Lessons" | "Appointments" | "Event" | "Other";
-
 type RecurrenceKind = "none" | "weekly" | "biweekly" | "every_n_weeks";
 
 interface Recurrence {
@@ -48,6 +56,7 @@ interface Activity {
 
 const weekdayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// --- date helpers (same semantics as before) ---
 function parseDate(s: string): Date | null {
     const d = new Date(s);
     return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -76,27 +85,7 @@ function clampRange(a: Date, b: Date) {
     return { lo, hi };
 }
 
-const STORE_KEY = "activitiesPlanner:v2";
-const uid = () =>
-    typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-const palette = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EF4444", "#06B6D4", "#84CC16", "#F97316", "#22D3EE"];
-
-function useLocalStorageState<T>(key: string, initialValue: T) {
-    const [value, setValue] = useState<T>(() => {
-        if (typeof window === "undefined") return initialValue;
-        try {
-            const raw = localStorage.getItem(key);
-            return raw ? (JSON.parse(raw) as T) : initialValue;
-        } catch {
-            return initialValue;
-        }
-    });
-    useEffect(() => {
-        try { localStorage.setItem(key, JSON.stringify(value)); } catch { }
-    }, [key, value]);
-    return [value, setValue] as const;
-}
-
+// --- recurrence math (client-side preview only; server computes real budget links) ---
 function expandActivityDates(a: Activity, windowLo: Date, windowHi: Date): string[] {
     const s = parseDate(a.startDate)!;
     const e = parseDate(a.endDate)!;
@@ -120,64 +109,35 @@ function expandActivityDates(a: Activity, windowLo: Date, windowHi: Date): strin
     };
 
     switch (a.recurrence.kind) {
-        case "none": {
+        case "none":
             for (let d = new Date(lo); d <= hi; d = addDays(d, 1)) pushIfInWindow(d, result);
             break;
-        }
-        case "weekly": {
+        case "weekly":
             addWeeklyLike(1);
             break;
-        }
-        case "biweekly": {
+        case "biweekly":
             addWeeklyLike(2);
             break;
-        }
-        case "every_n_weeks": {
-            const n = Math.max(1, a.recurrence.intervalWeeks || 1);
-            addWeeklyLike(n);
+        case "every_n_weeks":
+            addWeeklyLike(Math.max(1, a.recurrence.intervalWeeks || 1));
             break;
-        }
     }
     return result;
 }
-
 function countOccurrences(a: Activity, lo: Date, hi: Date) {
     return expandActivityDates(a, lo, hi).length;
 }
 
 export default function ActivitiesPlanner() {
-    const [members, setMembers] = useLocalStorageState<Member[]>(
-        `${STORE_KEY}:members`,
-        [{ id: uid(), role: "parent", slot: "p1", name: "Parent 1", shortLabel: "P1", color: palette[0] }]
-    );
-    const [showParent2, setShowParent2] = useLocalStorageState<boolean>(`${STORE_KEY}:showParent2`, false);
+    // --- server data ---
+    const [members, setMembers] = useState<Member[]>([]);
+    const [activities, setActivities] = useState<Activity[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (showParent2) {
-            if (!members.some(m => m.role === "parent" && m.slot === "p2")) {
-                setMembers(prev => [
-                    ...prev,
-                    { id: uid(), role: "parent", slot: "p2", name: "Parent 2", shortLabel: "P2", color: palette[1] },
-                ]);
-            }
-        } else {
-            setMembers(prev => prev.filter(m => !(m.role === "parent" && m.slot === "p2")));
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showParent2]);
-
-    const addChild = () => {
-        const idx = members.filter(m => m.role === "child").length + 1;
-        const color = palette[(members.length) % palette.length];
-        setMembers(prev => [...prev, { id: uid(), role: "child", name: `Child ${idx}`, shortLabel: `C${idx}`, color }]);
-    };
-    const updateMember = (id: string, patch: Partial<Member>) =>
-        setMembers(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
-    const removeMember = (id: string) => setMembers(prev => prev.filter(m => m.id !== id));
-
-    const [activities, setActivities] = useLocalStorageState<Activity[]>(`${STORE_KEY}:activities`, []);
-
-    const [anchorISO, setAnchorISO] = useLocalStorageState<string>(`${STORE_KEY}:anchorISO`, new Date().toISOString());
+    // --- calendar state ---
+    const [anchorISO, setAnchorISO] = useState<string>(new Date().toISOString());
     const anchor = useMemo(() => new Date(anchorISO), [anchorISO]);
     const setAnchor = (d: Date) => setAnchorISO(new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1)).toISOString());
 
@@ -199,8 +159,8 @@ export default function ActivitiesPlanner() {
 
     const isToday = (d: Date) => sameDay(d, new Date());
     const withinMonth = (d: Date) => d >= monthLo && d <= monthHi;
-    const parent1 = members.find(m => m.role === "parent" && m.slot === "p1");
-    const parent2 = members.find(m => m.role === "parent" && m.slot === "p2");
+
+    // --- drag to create ---
     const [dragging, setDragging] = useState(false);
     const [dragStart, setDragStart] = useState<string | null>(null);
     const [dragEnd, setDragEnd] = useState<string | null>(null);
@@ -213,9 +173,10 @@ export default function ActivitiesPlanner() {
         return d >= lo && d <= hi;
     };
 
+    // --- modal + form ---
     const [modalOpen, setModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
-    const editing = activities.find(a => a.id === editingId) || null;
+    const editing = activities.find((a) => a.id === editingId) || null;
 
     type FormState = {
         type: ActivityType;
@@ -245,9 +206,89 @@ export default function ActivitiesPlanner() {
 
     const [form, setForm] = useState<FormState>(emptyForm());
 
+    // --- load server data ---
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                setLoading(true);
+                setError(null);
+                const [mm, acts] = await Promise.all([
+                    listMembersForHousehold(),
+                    listPlannerActivities(),
+                ]);
+
+                if (!mounted) return;
+
+                // members from server
+                const mappedMembers: Member[] = mm.map((m: any) => ({
+                    id: m.id,
+                    role: m.role as Member["role"],
+                    slot: undefined, // your Member schema has optional slot; you can set via server if desired
+                    name: m.name,
+                    shortLabel: m.shortLabel ?? null,
+                    color: m.color ?? null,
+                }));
+                setMembers(mappedMembers);
+
+                // activities from server
+                const mappedActivities: Activity[] = acts.map(mapDtoToActivity);
+                setActivities(mappedActivities);
+            } catch (e: any) {
+                setError(e?.message || "Failed to load activities");
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        })();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    // --- mapping helpers ---
+    function mapDtoToActivity(a: ActivityDTO): Activity {
+        return {
+            id: a.id,
+            type: a.type as ActivityType,
+            name: a.name,
+            memberIds: a.memberIds,
+            startDate: a.startDate,
+            endDate: a.endDate,
+            recurrence: {
+                kind: a.recurrence.kind as RecurrenceKind,
+                daysOfWeek: a.recurrence.daysOfWeek as Weekday[],
+                intervalWeeks: a.recurrence.intervalWeeks,
+            },
+            costPerSession: a.costPerSession,
+            notes: a.notes,
+        };
+    }
+
+    function toUpsertPayload(a: Activity) {
+        return {
+            id: a.id?.startsWith("tmp_") ? undefined : a.id,
+            type: a.type,
+            name: a.name,
+            notes: a.notes,
+            startDate: a.startDate,
+            endDate: a.endDate,
+            recurrence: {
+                kind: a.recurrence.kind,
+                daysOfWeek: a.recurrence.daysOfWeek,
+                intervalWeeks: a.recurrence.intervalWeeks,
+            },
+            costPerSession: a.costPerSession,
+            memberIds: a.memberIds,
+            // optional budget mapping; tweak defaults if you like:
+            budgetCategory: "Kids Clubs",
+            budgetLabel: a.name,
+        } as const;
+    }
+
+    // --- modal openers ---
     const openForCreate = (startISO: string, endISO: string) => {
         setEditingId(null);
-        setForm(f => ({
+        setForm((f) => ({
             ...emptyForm(),
             startDate: startISO,
             endDate: endISO,
@@ -274,6 +315,7 @@ export default function ActivitiesPlanner() {
 
     const closeModal = () => setModalOpen(false);
 
+    // --- drag handlers ---
     const onPointerDownCell = (id: string, e: React.PointerEvent) => {
         if (e.pointerType !== "mouse") e.preventDefault();
         setDragging(true);
@@ -289,6 +331,7 @@ export default function ActivitiesPlanner() {
         setDragEnd(null);
     };
 
+    // --- derive calendar data ---
     const activitiesByDate = useMemo(() => {
         const map = new Map<string, Activity[]>();
         for (const a of activities) {
@@ -327,18 +370,21 @@ export default function ActivitiesPlanner() {
         return map;
     }, [activities, members, monthLo, monthHi]);
 
-    const saveActivity = () => {
+    // --- save/delete wired to server actions (with optimistic update) ---
+    const saveActivity = async () => {
         if (!form.name.trim()) return;
         if (form.memberIds.size === 0) return;
 
         const recurrence: Recurrence = {
             kind: form.recurrenceKind,
             daysOfWeek: Array.from(form.daysOfWeek),
-            intervalWeeks: form.recurrenceKind === "every_n_weeks" ? Math.max(1, parseInt(form.intervalWeeks || "1", 10)) : undefined,
+            intervalWeeks: form.recurrenceKind === "every_n_weeks"
+                ? Math.max(1, parseInt(form.intervalWeeks || "1", 10))
+                : undefined,
         };
 
         const base: Activity = {
-            id: editingId || uid(),
+            id: editing ? editing.id : `tmp_${Math.random().toString(36).slice(2)}`,
             type: form.type,
             name: form.name.trim(),
             memberIds: Array.from(form.memberIds),
@@ -349,114 +395,105 @@ export default function ActivitiesPlanner() {
             notes: form.notes?.trim() || undefined,
         };
 
-        setActivities(prev => {
-            if (editingId) {
-                return prev.map(a => (a.id === editingId ? base : a));
-            }
+        // optimistic
+        setSaving(true);
+        setError(null);
+        setActivities((prev) => {
+            if (editing) return prev.map((a) => (a.id === editing.id ? base : a));
             return [...prev, base];
         });
         setModalOpen(false);
+
+        try {
+            const res = await upsertPlannerActivity(toUpsertPayload(base));
+            // reconcile tmp id
+            if (!editing) {
+                setActivities((prev) => prev.map((a) => (a.id === base.id ? { ...a, id: res.id } : a)));
+            }
+        } catch (e: any) {
+            setError(e?.message || "Failed to save activity");
+            // rollback by refetch (simplest)
+            try {
+                const acts = await listPlannerActivities();
+                setActivities(acts.map(mapDtoToActivity));
+            } catch { /* ignore */ }
+        } finally {
+            setSaving(false);
+        }
     };
 
-    const deleteActivity = () => {
-        if (!editingId) return;
-        setActivities(prev => prev.filter(a => a.id !== editingId));
+    const removeActivity = async () => {
+        if (!editing) return;
+        const targetId = editing.id;
+
+        // optimistic
+        setActivities((prev) => prev.filter((a) => a.id !== targetId));
         setModalOpen(false);
+        setSaving(true);
+        setError(null);
+        try {
+            await deletePlannerActivity(targetId);
+        } catch (e: any) {
+            setError(e?.message || "Failed to delete activity");
+            // rollback by refetch
+            try {
+                const acts = await listPlannerActivities();
+                setActivities(acts.map(mapDtoToActivity));
+            } catch { /* ignore */ }
+        } finally {
+            setSaving(false);
+        }
     };
 
-    const formPreview = useMemo(() => {
-        const fake: Activity = {
-            id: "preview",
-            type: form.type,
-            name: form.name || "(activity)",
-            memberIds: Array.from(form.memberIds),
-            startDate: form.startDate,
-            endDate: form.endDate,
-            recurrence: {
-                kind: form.recurrenceKind,
-                daysOfWeek: Array.from(form.daysOfWeek),
-                intervalWeeks: form.recurrenceKind === "every_n_weeks" ? Math.max(1, parseInt(form.intervalWeeks || "1", 10)) : undefined,
-            },
-            costPerSession: parseFloat(form.costPerSession || "0") || 0,
-            notes: form.notes || "",
-        };
-        const nAll = countOccurrences(fake, parseDate(fake.startDate)!, parseDate(fake.endDate)!);
-        const nMonth = countOccurrences(fake, monthLo, monthHi);
-        return {
-            occurrencesRange: nAll,
-            occurrencesThisMonth: nMonth,
-            totalCostRange: nAll * fake.costPerSession,
-            totalCostThisMonth: nMonth * fake.costPerSession,
-        };
-    }, [form, monthLo, monthHi]);
+    // --- UI ---
 
-    useEffect(() => {
-        setMembers(prev => {
-            const parents = prev.filter(m => m.role === "parent");
-            const hasP1 = parents.some(m => m.slot === "p1");
-            const hasP2 = parents.some(m => m.slot === "p2");
-            let changed = false;
-            const next = prev.map(m => ({ ...m }));
-
-            if (!hasP1 && parents[0]) {
-                const idx = next.findIndex(x => x.id === parents[0].id);
-                next[idx].slot = "p1"; changed = true;
-            }
-            if (showParent2 && !hasP2 && parents[1]) {
-                const idx = next.findIndex(x => x.id === parents[1].id);
-                next[idx].slot = "p2"; changed = true;
-            }
-            return changed ? next : prev;
-        });
-    }, [setMembers, showParent2]);
-
+    const parent1 = members.find((m) => m.role === "parent"); // display-only; members are server-sourced
 
     return (
         <div className="space-y-6">
             <h2 className="text-xl sm:text-2xl font-semibold">Activities Planner</h2>
+
+            {error && (
+                <div className="p-3 border rounded-lg text-red-600 bg-red-50">{error}</div>
+            )}
+
             <section className="card space-y-4">
                 <div className="flex flex-wrap items-end gap-3 justify-between">
-                    <div className="text-sm opacity-80">Add your family and assign colours. These appear on the calendar.</div>
+                    <div className="text-sm opacity-80">
+                        Assign members, schedule activities, and track recurring costs. Members are loaded from your household.
+                    </div>
                     <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setForm(emptyForm())}>
-                            <BrushCleaning className="mr-1 h-4 w-4" />Reset form
+                        <Button size="sm" variant="outline" onClick={() => setForm(emptyForm())} disabled={loading || saving}>
+                            <BrushCleaning className="mr-1 h-4 w-4" />
+                            Reset form
                         </Button>
-                        <Button size="sm" onClick={() => openForCreate(ymd(monthLo), ymd(monthLo))}>
-                            <CalendarPlus className="mr-1 h-4 w-4" /> New activity
+                        <Button size="sm" onClick={() => openForCreate(ymd(monthLo), ymd(monthLo))} disabled={loading || saving}>
+                            <CalendarPlus className="mr-1 h-4 w-4" />
+                            New activity
                         </Button>
                     </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4 items-stretch">
-                    {parent1 && (
-                        <MemberCard
-                            member={parent1}
-                            onChange={(patch) => updateMember(parent1.id, patch)}
-                        />
-                    )}
-
-                    {showParent2 ? (
-                        parent2 ? (
-                            <MemberCard
-                                member={parent2}
-                                onChange={(patch) => updateMember(parent2.id, patch)}
-                                onRemove={() => setShowParent2(false)}
-                            />
-                        ) : null
-                    ) : (
-                        <div className="p-3 border rounded-2xl flex items-center justify-center h-full">
-                            <Button variant="outline" onClick={() => setShowParent2(true)}>+ Add Parent 2</Button>
-                        </div>
-                    )}
-                </div>
-
+                {/* Members list (display-only) */}
                 <div className="space-y-2">
-                    <div className="text-sm font-medium">Children</div>
-                    <div className="flex flex-col gap-3">
-                        {members.filter(m => m.role === "child").map((m) => (
-                            <MemberRow key={m.id} member={m} onChange={(patch) => updateMember(m.id, patch)} onRemove={() => removeMember(m.id)} />
+                    <div className="text-sm font-medium">Family & caregivers</div>
+                    <div className="flex flex-col gap-2">
+                        {members.map((m) => (
+                            <div key={m.id} className="flex items-center gap-3">
+                                <span
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs"
+                                    style={{ backgroundColor: m.color || "#64748b" }}
+                                >
+                                    {(m.shortLabel || m.name?.slice(0, 2) || "").toUpperCase()}
+                                </span>
+                                <div className="text-sm">
+                                    {m.name} <span className="opacity-60">({m.role})</span>
+                                </div>
+                            </div>
                         ))}
-                        <Button variant="outline" className="w-full sm:w-auto" onClick={addChild}>+ Add child</Button>
+                        {members.length === 0 && (
+                            <div className="text-sm opacity-70">No members yet.</div>
+                        )}
                     </div>
                 </div>
             </section>
@@ -464,8 +501,12 @@ export default function ActivitiesPlanner() {
             <section className="card">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))}>←</Button>
-                        <Button variant="outline" size="sm" onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))}>→</Button>
+                        <Button variant="outline" size="sm" onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} disabled={loading}>
+                            ←
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} disabled={loading}>
+                            →
+                        </Button>
                     </div>
                     <div className="text-lg font-medium text-center sm:text-left">
                         {anchor.toLocaleString("default", { month: "long" })} {anchor.getFullYear()}
@@ -485,7 +526,9 @@ export default function ActivitiesPlanner() {
 
                 <div className="hidden md:block select-none touch-none">
                     <div className="grid grid-cols-7 text-[11px] sm:text-xs opacity-70 mb-1">
-                        {weekdayName.map((w) => (<div key={w} className="px-2 py-1">{w}</div>))}
+                        {weekdayName.map((w) => (
+                            <div key={w} className="px-2 py-1">{w}</div>
+                        ))}
                     </div>
                     <div className="grid grid-cols-7 gap-px bg-[var(--border-color)] rounded-xl overflow-hidden">
                         {cells.map((d) => {
@@ -536,10 +579,10 @@ export default function ActivitiesPlanner() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 mt-3 text-xs opacity-80">
-                    {members.map(m => (
+                    {members.map((m) => (
                         <span key={m.id} className="inline-flex items-center gap-1">
-                            <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: m.color }} />
-                            {m.shortLabel}
+                            <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: m.color || "#64748b" }} />
+                            {(m.shortLabel || m.name?.slice(0, 2) || "").toUpperCase()}
                         </span>
                     ))}
                     <span className="ml-auto font-medium">
@@ -548,12 +591,12 @@ export default function ActivitiesPlanner() {
                 </div>
 
                 <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                    {members.map(m => {
+                    {members.map((m) => {
                         const v = breakdownByMember.get(m.id) || 0;
                         return (
                             <div key={m.id} className="p-2 border rounded-lg bg-[var(--card-bg)] flex items-center justify-between">
                                 <span className="inline-flex items-center gap-2">
-                                    <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: m.color }} />
+                                    <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: m.color || "#64748b" }} />
                                     {m.name}
                                 </span>
                                 <span className="font-medium">£{v.toFixed(2)}</span>
@@ -568,7 +611,7 @@ export default function ActivitiesPlanner() {
                     <DialogHeader>
                         <DialogTitle>{editing ? "Edit activity" : "Add activity"}</DialogTitle>
                         <DialogDescription>
-                            Assign members, set dates and recurrence. Costs are per session; totals are auto-calculated.
+                            Assign members, set dates and recurrence. Costs are per session; totals are auto-calculated and budget-linked.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -578,28 +621,34 @@ export default function ActivitiesPlanner() {
                                 <Label className="text-sm">Activity type</Label>
                                 <Select value={form.type} onValueChange={(v: ActivityType) => setForm(f => ({ ...f, type: v }))}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>
+                                    <SelectContent
+                                        position="popper"
+                                        side="bottom"
+                                        align="start"
+                                        className="z-[1001]" // higher than the Dialog overlay
+                                    >
                                         {["Sports", "Clubs", "Lessons", "Appointments", "Event", "Other"].map(t => (
                                             <SelectItem key={t} value={t}>{t}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
+
                             </div>
 
                             <div className="flex flex-col gap-1">
                                 <Label className="text-sm">Activity name</Label>
-                                <Input value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Swimming club" />
+                                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Swimming club" />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="flex flex-col gap-1">
                                 <Label className="text-sm">Start date</Label>
-                                <Input type="date" value={form.startDate} onChange={(e) => setForm(f => ({ ...f, startDate: e.target.value }))} />
+                                <Input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} />
                             </div>
                             <div className="flex flex-col gap-1">
                                 <Label className="text-sm">End date</Label>
-                                <Input type="date" value={form.endDate} onChange={(e) => setForm(f => ({ ...f, endDate: e.target.value }))} />
+                                <Input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} />
                             </div>
                         </div>
 
@@ -608,7 +657,12 @@ export default function ActivitiesPlanner() {
                                 <Label className="text-sm">Recurrence</Label>
                                 <Select value={form.recurrenceKind} onValueChange={(v: RecurrenceKind) => setForm(f => ({ ...f, recurrenceKind: v }))}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>
+                                    <SelectContent
+                                        position="popper"
+                                        side="bottom"
+                                        align="start"
+                                        className="z-[1001]"
+                                    >
                                         <SelectItem value="none">None (every day in range)</SelectItem>
                                         <SelectItem value="weekly">Weekly</SelectItem>
                                         <SelectItem value="biweekly">Every 2 weeks</SelectItem>
@@ -621,8 +675,10 @@ export default function ActivitiesPlanner() {
                                 <div className="flex flex-col gap-1">
                                     <Label className="text-sm">Interval (weeks)</Label>
                                     <Input
-                                        type="text" min={1} value={form.intervalWeeks}
-                                        onChange={(e) => setForm(f => ({ ...f, intervalWeeks: e.target.value }))}
+                                        type="text"
+                                        min={1}
+                                        value={form.intervalWeeks}
+                                        onChange={(e) => setForm((f) => ({ ...f, intervalWeeks: e.target.value }))}
                                     />
                                 </div>
                             )}
@@ -641,7 +697,7 @@ export default function ActivitiesPlanner() {
                                                 variant={active ? "default" : "outline"}
                                                 className="px-3 py-1.5 rounded-full"
                                                 onClick={() => {
-                                                    setForm(f => {
+                                                    setForm((f) => {
                                                         const s = new Set(f.daysOfWeek);
                                                         active ? s.delete(idx as Weekday) : s.add(idx as Weekday);
                                                         return { ...f, daysOfWeek: s };
@@ -659,20 +715,25 @@ export default function ActivitiesPlanner() {
                         <div className="flex flex-col gap-2">
                             <Label className="text-sm">Assign to</Label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {members.map(m => {
+                                {members.map((m) => {
                                     const checked = form.memberIds.has(m.id);
                                     return (
                                         <label key={m.id} className="flex items-center gap-2 border rounded-lg p-2 cursor-pointer">
-                                            <Checkbox checked={checked} onCheckedChange={(v) => {
-                                                setForm(f => {
-                                                    const s = new Set(f.memberIds);
-                                                    v ? s.add(m.id) : s.delete(m.id);
-                                                    return { ...f, memberIds: s };
-                                                });
-                                            }} />
+                                            <Checkbox
+                                                checked={checked}
+                                                onCheckedChange={(v) => {
+                                                    setForm((f) => {
+                                                        const s = new Set(f.memberIds);
+                                                        v ? s.add(m.id) : s.delete(m.id);
+                                                        return { ...f, memberIds: s };
+                                                    });
+                                                }}
+                                            />
                                             <span className="inline-flex items-center gap-2">
-                                                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: m.color }} />
-                                                <span className="text-sm">{m.name}</span>
+                                                <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: m.color || "#64748b" }} />
+                                                <span className="text-sm">
+                                                    {m.name} <span className="opacity-60">({m.role})</span>
+                                                </span>
                                             </span>
                                         </label>
                                     );
@@ -686,31 +747,33 @@ export default function ActivitiesPlanner() {
                                 <Input
                                     type="text" inputMode="text"
                                     value={form.costPerSession}
-                                    onChange={(e) => setForm(f => ({ ...f, costPerSession: e.target.value }))}
+                                    onChange={(e) => setForm((f) => ({ ...f, costPerSession: e.target.value }))}
                                     placeholder="0.00"
                                 />
                             </div>
                             <div className="flex flex-col gap-1">
                                 <Label className="text-sm">Notes (optional)</Label>
-                                <Input value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="e.g. bring kit" />
+                                <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="e.g. bring kit" />
                             </div>
                         </div>
 
-                        <div className="text-xs opacity-80 p-2 rounded border bg-[var(--card-bg)]">
-                            <div><strong>Sessions (range):</strong> {formPreview.occurrencesRange} • <strong>Total:</strong> £{formPreview.totalCostRange.toFixed(2)}</div>
-                            <div><strong>Sessions (this month):</strong> {formPreview.occurrencesThisMonth} • <strong>Total:</strong> £{formPreview.totalCostThisMonth.toFixed(2)}</div>
-                        </div>
+                        {/* Preview uses client recurrence math */}
+                        <FormPreview
+                            form={form}
+                            monthLo={monthLo}
+                            monthHi={monthHi}
+                        />
                     </div>
 
                     <DialogFooter className="mt-3 flex items-center justify-between">
                         {editing && (
-                            <Button variant="outline" className="text-red-600" onClick={deleteActivity}>
+                            <Button variant="outline" className="text-red-600" onClick={removeActivity} disabled={saving}>
                                 <Trash2 className="mr-1 h-4 w-4" /> Delete
                             </Button>
                         )}
                         <div className="ml-auto flex gap-2">
-                            <Button variant="outline" onClick={closeModal}>Cancel</Button>
-                            <Button onClick={saveActivity}>{editing ? "Save changes" : "Save activity"}</Button>
+                            <Button variant="outline" onClick={closeModal} disabled={saving}>Cancel</Button>
+                            <Button onClick={saveActivity} disabled={saving}>{editing ? "Save changes" : "Save activity"}</Button>
                         </div>
                     </DialogFooter>
                 </DialogContent>
@@ -719,80 +782,55 @@ export default function ActivitiesPlanner() {
     );
 }
 
+// --- small preview component to keep render tidy ---
+function FormPreview({
+    form,
+    monthLo,
+    monthHi,
+}: {
+    form: {
+        type: ActivityType;
+        name: string;
+        startDate: string;
+        endDate: string;
+        memberIds: Set<string>;
+        recurrenceKind: RecurrenceKind;
+        daysOfWeek: Set<Weekday>;
+        intervalWeeks: string;
+        costPerSession: string;
+        notes: string;
+    };
+    monthLo: Date;
+    monthHi: Date;
+}) {
+    const fake: Activity = {
+        id: "preview",
+        type: form.type,
+        name: form.name || "(activity)",
+        memberIds: Array.from(form.memberIds),
+        startDate: form.startDate,
+        endDate: form.endDate,
+        recurrence: {
+            kind: form.recurrenceKind,
+            daysOfWeek: Array.from(form.daysOfWeek),
+            intervalWeeks: form.recurrenceKind === "every_n_weeks"
+                ? Math.max(1, parseInt(form.intervalWeeks || "1", 10))
+                : undefined,
+        },
+        costPerSession: parseFloat(form.costPerSession || "0") || 0,
+        notes: form.notes || "",
+    };
 
-function MemberCard({
-    member, onChange, onRemove,
-}: { member: Member; onChange: (patch: Partial<Member>) => void; onRemove?: () => void }) {
+    const s = parseDate(fake.startDate)!;
+    const e = parseDate(fake.endDate)!;
+
+    const occurrencesRange = countOccurrences(fake, s, e);
+    const occurrencesThisMonth = countOccurrences(fake, monthLo, monthHi);
+
     return (
-        <div className="p-3 border rounded-2xl h-full">
-            <div className="inline-flex items-center gap-2 pb-4">
-                <span
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs"
-                    style={{ backgroundColor: member.color }}
-                >
-                    {member.shortLabel || (member.role === "parent" ? "P" : "C")}
-                </span>
-                <Input
-                    className="w-56"
-                    value={member.name}
-                    onChange={(e) => onChange({ name: e.target.value })}
-                    placeholder="Name"
-                />
-            </div>
-            <div className="flex flex-wrap items-end gap-3 justify-between">
-
-
-                <div className="flex items-end gap-3">
-                    <div className="flex flex-col gap-1">
-                        <Label className="text-sm">Label</Label>
-                        <Input
-                            className="w-24"
-                            value={member.shortLabel}
-                            onChange={(e) => onChange({ shortLabel: e.target.value.slice(0, 2).toUpperCase() })}
-                        />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                        <Label className="text-sm">Colour</Label>
-                        <Input
-                            className="w-24"
-                            type="color"
-                            value={member.color}
-                            onChange={(e) => onChange({ color: e.target.value })}
-                        />
-                    </div>
-
-                    {onRemove && (
-                        <Button variant="outline" className="text-red-600" onClick={onRemove}>
-                            Remove
-                        </Button>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-
-function MemberRow({
-    member, onChange, onRemove,
-}: { member: Member; onChange: (patch: Partial<Member>) => void; onRemove: () => void }) {
-    return (
-        <div className="flex flex-wrap items-end gap-3">
-            <div className="inline-flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs" style={{ backgroundColor: member.color }}>
-                    {member.shortLabel || "C"}
-                </span>
-                <Input className="w-56" value={member.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Child name" />
-            </div>
-            <div className="flex flex-col gap-1">
-                <Label className="text-sm">Label</Label>
-                <Input className="w-24" value={member.shortLabel} onChange={(e) => onChange({ shortLabel: e.target.value.slice(0, 2).toUpperCase() })} placeholder="C1" />
-            </div>
-            <div className="flex flex-col gap-1">
-                <Label className="text-sm">Colour</Label>
-                <Input className="w-24" type="color" value={member.color} onChange={(e) => onChange({ color: e.target.value })} />
-            </div>
-            <Button variant="outline" className="ml-auto" onClick={onRemove}>Remove</Button>
+        <div className="text-xs opacity-80 p-2 rounded border bg-[var(--card-bg)]">
+            <div><strong>Sessions (range):</strong> {occurrencesRange} • <strong>Total:</strong> £{(occurrencesRange * fake.costPerSession).toFixed(2)}</div>
+            <div><strong>Sessions (this month):</strong> {occurrencesThisMonth} • <strong>Total:</strong> £{(occurrencesThisMonth * fake.costPerSession).toFixed(2)}</div>
         </div>
     );
 }
@@ -831,7 +869,7 @@ function ActivityChip({
     members: Member[];
     onClick?: () => void;
 }) {
-    const primary = members.find(m => m.id === activity.memberIds[0]);
+    const primary = members.find((m) => m.id === activity.memberIds[0]);
     const extra = activity.memberIds.length - 1;
 
     const interactive = !!onClick;
@@ -870,7 +908,6 @@ function ActivityChip({
     );
 }
 
-
 function MobileMonthList({
     days,
     members,
@@ -903,7 +940,7 @@ function MobileMonthList({
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex flex-wrap gap-1">
-                                        {acts.slice(0, 3).map(a => (
+                                        {acts.slice(0, 3).map((a) => (
                                             <ActivityChip
                                                 key={a.id}
                                                 activity={a}
@@ -927,4 +964,3 @@ function MobileMonthList({
         </div>
     );
 }
-
