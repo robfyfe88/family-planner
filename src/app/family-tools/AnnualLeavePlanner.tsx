@@ -513,7 +513,6 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
             const closed = closureSet.has(id);
             const eventsToday = eventsByDate.get(id) ?? [];
 
-            // unified uncovered logic
             const isUncovered = closed && !coveredByRule && (!cov || cov.type === "none");
 
             return (
@@ -533,8 +532,21 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
                 }}
               >
                 <div className="text-xs mb-1 flex items-center justify-between">
-                  <span className={`px-1.5 py-0.5 rounded ${within ? "" : "opacity-60"}`}>{d.getDate()}</span>
-
+                  <div className="flex items-center gap-1">
+                    <span
+                      aria-hidden
+                      className="uppercase text-[10px] leading-3 px-1 py-0.5 rounded bg-black/5 dark:bg-white/10"
+                      title={weekdayName[w]}
+                    >
+                      {weekdayName[w][0]}
+                    </span>
+                    <span
+                      data-date-number
+                      className={`px-1.5 py-0.5 rounded ${within ? "" : "opacity-60"}`}
+                    >
+                      {d.getDate()}
+                    </span>
+                  </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -1123,7 +1135,7 @@ function MobileMonthList({
               <div className="absolute top-2 right-2 z-50">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Settings  size={24} />
+                    <Settings size={24} />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 z-50">
                     <DropdownMenuLabel>Actions ({id})</DropdownMenuLabel>
@@ -1247,17 +1259,17 @@ function MobileMonthList({
 
 
                 {/* Row 4: closure action (acts as status) */}
-                {!isCaregiver && ( 
-                <div className="mt-2">
-                  <Button
-                    size="sm"
-                    variant={closureVariant}
-                    className={`h-9 rounded-full px-3 ${closed ? "bg-blue-600 text-white hover:bg-blue-600" : ""}`}
-                    onClick={() => toggleClosure(d)}
-                  >
-                    {closureLabel}
-                  </Button>
-                </div>
+                {!isCaregiver && (
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      variant={closureVariant}
+                      className={`h-9 rounded-full px-3 ${closed ? "bg-blue-600 text-white hover:bg-blue-600" : ""}`}
+                      onClick={() => toggleClosure(d)}
+                    >
+                      {closureLabel}
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

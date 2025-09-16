@@ -691,7 +691,7 @@ function YearModeToggle({
   yearMode, setYearMode,
 }: { yearMode: YearMode; setYearMode: (m: YearMode) => void; }) {
   return (
-    <div className="inline-flex rounded-full border overflow-hidden">
+    <div className="inline-flex rounded-full border overflow-hidden w-fit">
       <Button
         variant={yearMode === "FULL_YEAR" ? "default" : "ghost"}
         className="rounded-none"
