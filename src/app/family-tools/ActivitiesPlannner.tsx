@@ -336,8 +336,7 @@ function toUpsertPayload(a: Activity) {
     name: a.name,
     notes: a.notes,
     startDate: a.startDate,
-    // 👇 force a string (fallback to startDate if open-ended)
-    endDate: a.endDate ?? a.startDate,
+    endDate: a.endDate ?? null,      
     recurrence: {
       kind: a.recurrence.kind,
       daysOfWeek: a.recurrence.daysOfWeek,
@@ -346,7 +345,6 @@ function toUpsertPayload(a: Activity) {
     feeModel: a.feeModel,
     amount: a.amount,
     allocation: a.feeModel === "total_range" ? (a.allocation ?? "evenly") : null,
-    // legacy field for back-compat if your API still reads it
     costPerSession: a.feeModel === "per_session" ? a.amount : 0,
     memberIds: a.memberIds,
     budgetCategory: "Kids Clubs",

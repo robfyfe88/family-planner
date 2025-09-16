@@ -73,19 +73,19 @@ export async function listPlannerActivities(): Promise<ActivityDTO[]> {
   });
 
   return rows.map((a): ActivityDTO => ({
-    id: a.id,
-    type: a.type,
-    name: a.name,
-    notes: a.notes ?? undefined,
-    startDate: a.startDate.toISOString().slice(0, 10),
-    endDate: a.endDate ? a.endDate.toISOString().slice(0, 10) : "",
-    recurrence: {
-      kind: a.recurrenceKind as RecurrenceKind,
-      daysOfWeek: (a.daysOfWeek as number[]).map((n) => n as Weekday),
-      intervalWeeks: a.intervalWeeks ?? undefined,
-    },
-    costPerSession: Number(a.costPerSession),
-    memberIds: a.members.map((m) => m.memberId),
+  id: a.id,
+  type: a.type,
+  name: a.name,
+  notes: a.notes ?? undefined,
+  startDate: a.startDate.toISOString().slice(0,10),
+  endDate: a.endDate ? a.endDate.toISOString().slice(0,10) : "",
+  recurrence: {
+    kind: a.recurrenceKind as RecurrenceKind,
+    daysOfWeek: (a.daysOfWeek as number[]).map(n => n as Weekday),
+    intervalWeeks: a.intervalWeeks ?? undefined,
+  },
+  costPerSession: Number(a.costPerSession),   // legacy
+  memberIds: a.members.map(m => m.memberId),
   }));
 }
 

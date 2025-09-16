@@ -22,21 +22,21 @@ export type DashboardData = {
 const toISODate = (d: Date) => d.toISOString().slice(0, 10);
 const toDateOnlyUTC = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
-// ---- recurrence expansion (matches the client) ----
 type RecurrenceKind = "none" | "weekly" | "biweekly" | "every_n_weeks";
+
 function expandActivityDates(
   a: {
     startDate: Date;
-    endDate: Date;
+    endDate?: Date | null;            // ⬅️ allow null/undefined
     recurrenceKind: RecurrenceKind;
-    daysOfWeek: number[]; // 0..6 Sun..Sat
+    daysOfWeek: number[];             // 0..6 Sun..Sat
     intervalWeeks?: number | null;
   },
   windowLo: Date,
   windowHi: Date
 ): string[] {
   const s = toDateOnlyUTC(a.startDate);
-  const e = toDateOnlyUTC(a.endDate);
+  const e = toDateOnlyUTC(a.endDate ?? windowHi);   // ⬅️ clamp open-ended to window
   const lo = s <= e ? s : e;
   const hi = s <= e ? e : s;
 
@@ -49,11 +49,9 @@ function expandActivityDates(
 
   const addWeeklyLike = (intervalWeeks: number) => {
     const anchorWeekStart = addDays(s, -s.getUTCDay()); // Sun as week start
-    for (
-      let weekStart = new Date(anchorWeekStart);
+    for (let weekStart = new Date(anchorWeekStart);
       weekStart <= hi;
-      weekStart = addDays(weekStart, 7 * intervalWeeks)
-    ) {
+      weekStart = addDays(weekStart, 7 * intervalWeeks)) {
       for (const wd of a.daysOfWeek) {
         const occ = addDays(weekStart, wd);
         if (occ >= lo && occ <= hi) pushIfInWindow(occ);
@@ -63,22 +61,19 @@ function expandActivityDates(
 
   switch (a.recurrenceKind) {
     case "none": {
-      for (let d = new Date(lo); d <= hi; d = addDays(d, 1)) pushIfInWindow(d);
+      // one-off on the start date only
+      pushIfInWindow(s);
       break;
     }
-    case "weekly": {
+    case "weekly":
       addWeeklyLike(1);
       break;
-    }
-    case "biweekly": {
+    case "biweekly":
       addWeeklyLike(2);
       break;
-    }
-    case "every_n_weeks": {
-      const n = Math.max(1, a.intervalWeeks ?? 1);
-      addWeeklyLike(n);
+    case "every_n_weeks":
+      addWeeklyLike(Math.max(1, a.intervalWeeks ?? 1));
       break;
-    }
   }
   return result;
 }
@@ -113,7 +108,8 @@ export async function getDashboardData(): Promise<DashboardData> {
   const planner = await prisma.plannerActivity.findMany({
     where: {
       householdId,
-      AND: [{ endDate: { gte: windowLo } }, { startDate: { lte: windowHi } }],
+      startDate: { lte: windowHi },
+      OR: [{ endDate: null }, { endDate: { gte: windowLo } }],
     },
     orderBy: { startDate: "asc" },
     select: {
@@ -131,18 +127,18 @@ export async function getDashboardData(): Promise<DashboardData> {
   type Occ = { id: string; dateISO: string; label: string; weekdaySun0: number };
   const occurrences: Occ[] = [];
 
-  for (const a of planner) {
-    const occs = expandActivityDates(
-      {
-        startDate: a.startDate,
-        endDate: a.endDate,
-        recurrenceKind: a.recurrenceKind as RecurrenceKind,
-        daysOfWeek: (a.daysOfWeek ?? []) as number[],
-        intervalWeeks: a.intervalWeeks ?? undefined,
-      },
-      windowLo,
-      windowHi
-    );
+for (const a of planner) {
+  const occs = expandActivityDates(
+    {
+      startDate: a.startDate,
+      endDate: a.endDate,                
+      recurrenceKind: a.recurrenceKind as RecurrenceKind,
+      daysOfWeek: (a.daysOfWeek ?? []) as number[],
+      intervalWeeks: a.intervalWeeks ?? undefined,
+    },
+    windowLo,
+    windowHi
+  );
 
     const who = (a.members ?? [])
       .map((m) => memberShort.get(m.memberId) || "")
