@@ -1,179 +1,132 @@
+import Link from "next/link";
+import {
+  ArrowRight,
+  Check,
+  CreditCard,
+  HeartHandshake,
+  Landmark,
+  PiggyBank,
+  ShieldCheck,
+  Sparkles,
+  Target,
+} from "lucide-react";
 import SignInButton from "@/components/SignInButton";
 import HearthPlanLogo from "@/components/HearthPlanLogo";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Check as CheckIcon, Shield, Crown, Users } from "lucide-react";
 
-function Check({ text }: { text: string }) {
-  return (
-    <li className="flex items-start gap-2">
-      <CheckIcon className="h-4 w-4 mt-0.5" />
-      <span>{text}</span>
-    </li>
-  );
-}
-
+const promises = [
+  "Know exactly what’s left each month",
+  "See every debt and its finish line",
+  "Build savings without losing sight of family life",
+];
 
 export default function LandingPage() {
   return (
-    <main className="min-h-dvh">
-      <header className="max-w-6xl mx-auto px-4 sm:px-2 py-4 flex items-center justify-between">
-        <div className="inline-flex items-center gap-2 font-semibold">
-          <HearthPlanLogo size={50} variant="app" />
-        </div>
-        <div className="flex items-center gap-2">
+    <main className="marketing-page">
+      <header className="marketing-header">
+        <HearthPlanLogo size={48} variant="app" />
+        <div className="marketing-actions">
+          <Link href="#how-it-works">How it works</Link>
           <SignInButton />
         </div>
       </header>
 
-      <section className="overflow-hidden">
-        <div
-          className="hero-vibrant"
-          style={{
-            background:
-              "radial-gradient(900px 480px at 10% -10%, rgba(99,102,241,.35) 0%, rgba(99,102,241,0) 60%), radial-gradient(700px 480px at 90% -10%, rgba(16,185,129,.35) 0%, rgba(16,185,129,0) 60%), linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,1) 55%)",
-          }}
-        >
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-24">
-            <div className="grid lg:grid-cols-2 gap-10 items-center">
-              <div>
-                <h1 className="text-4xl sm:text-5xl font-semibold leading-tight">
-                  HearthPlan — the all-in-one planner for busy families
-                </h1>
-                <p className="mt-4 text-base sm:text-lg text-[var(--foreground)]/80">
-                  Coordinate annual leave around school closures, model nursery
-                  costs with real UK funding rules, and keep a shared family
-                  budget — together, in one place.
-                </p>
-
-                <div className="mt-4 flex items-center gap-2 text-xs sm:text-sm">
-                  <span className="pill pill-blue">No installs</span>
-                  <span className="pill pill-green">Made for UK families</span>
-                  <span className="pill pill-amber">Mobile friendly</span>
-                </div>
-              </div>
-
-              <div className="card p-0 overflow-hidden shadow-lg">
-                <div className="bg-gradient-to-br from-[var(--accent-2)]/15 via-[var(--accent-3)]/10 to-transparent p-6">
-                  <div className="text-sm opacity-80 mb-2">Preview</div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="p-3 border rounded-xl bg-white">
-                      <div className="text-xs opacity-70 mb-1">Annual Leave</div>
-                      <div className="h-24 rounded-lg bg-[rgba(59,130,246,0.22)]" />
-                    </div>
-                    <div className="p-3 border rounded-xl bg-white">
-                      <div className="text-xs opacity-70 mb-1">Nursery Costs</div>
-                      <div className="h-24 rounded-lg bg-[rgba(234,88,12,0.20)]" />
-                    </div>
-                    <div className="p-3 border rounded-xl bg-white">
-                      <div className="text-xs opacity-70 mb-1">Family Budget</div>
-                      <div className="h-24 rounded-lg bg-[rgba(16,185,129,0.22)]" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="features" className="max-w-6xl mx-auto px-4 sm:px-6 py-12 grid lg:grid-cols-3 gap-6">
-        <div className="feature-card border-t-4 border-[var(--accent-2)]">
-          <h3 className="text-lg font-semibold mb-2">Smart leave planning</h3>
-          <p className="opacity-80 text-sm">
-            Auto-allocate who should be off during school closures, prioritising
-            blocks (Christmas & Summer) and minimising random single days.
+      <section className="marketing-hero">
+        <div className="marketing-copy">
+          <div className="marketing-kicker"><Sparkles size={14} /> Money clarity for real family life</div>
+          <h1>A calmer home starts with a clearer financial future.</h1>
+          <p>
+            HearthPlan brings your budget, debt payoff, savings goals, childcare costs and family commitments
+            into one shared plan—so you can make confident decisions together.
           </p>
-        </div>
-        <div className="feature-card border-t-4 border-[var(--accent-3)]">
-          <h3 className="text-lg font-semibold mb-2">Nursery cost engine</h3>
-          <p className="opacity-80 text-sm">
-            Model AM/PM sessions, hourly rounding, funded hours (stretched/term-time) and
-            Tax-Free Childcare. See the true monthly bill.
-          </p>
-        </div>
-        <div className="feature-card border-t-4 border-[var(--accent)]">
-          <h3 className="text-lg font-semibold mb-2">Budget that reflects reality</h3>
-          <p className="opacity-80 text-sm">
-            Tie childcare + leave decisions into a shared family budget so you
-            see cash impact immediately.
-          </p>
-        </div>
-      </section>
-
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-3">How it works</h2>
-          <ol className="grid sm:grid-cols-3 gap-4 text-sm">
-            <li className="p-3 border rounded-xl bg-[var(--card-bg)]">
-              <div className="font-medium mb-1">1. Sign in</div>
-              <div className="opacity-80">Use Google to create your space.</div>
-            </li>
-            <li className="p-3 border rounded-xl bg-[var(--card-bg)]">
-              <div className="font-medium mb-1">2. Set your rules</div>
-              <div className="opacity-80">Add school closures, allowances & session rates.</div>
-            </li>
-            <li className="p-3 border rounded-xl bg-[var(--card-bg)]">
-              <div className="font-medium mb-1">3. Plan together</div>
-              <div className="opacity-80">Share decisions and export calendars or CSVs.</div>
-            </li>
-          </ol>
-        </div>
-      </section>
-
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8 mb-20">
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="rounded-xl border p-4 bg-white">
-            <div className="flex items-center justify-between">
-              <span className="pill pill-slate">Free</span>
-              <Shield className="h-5 w-5 opacity-60" />
-            </div>
-            <div className="price mt-1">£0</div>
-            <ul className="text-sm space-y-2 mt-3">
-              <Check text="1 parent" />
-              <Check text="Unlimited children" />
-              <Check text="Budget and Childcare Planner" />
-              <Check text="Local exports" />
-            </ul>
+          <div className="hero-actions">
+            <SignInButton />
+            <Link className="text-link" href="#inside">See what’s inside <ArrowRight size={16} /></Link>
           </div>
+          <ul className="promise-list">
+            {promises.map((promise) => <li key={promise}><Check size={15} /> {promise}</li>)}
+          </ul>
+        </div>
 
-          <div className="rounded-xl border p-4 bg-white">
-            <div className="flex items-center justify-between">
-              <span className="pill pill-emerald">Pro</span>
-              <Crown className="h-5 w-5 opacity-60" />
-            </div>
-            <div className="price mt-1">£4.99/mo</div>
-            <ul className="text-sm space-y-2 mt-3">
-              <Check text="Up to 2 parents" />
-              <Check text="1 caregiver" />
-              <Check text="Budget, Childcare and Annual Leave Planner" />
-              <Check text="Local exports" />
-            </ul>
+        <div className="product-preview" aria-label="Preview of the financial overview">
+          <div className="preview-topbar">
+            <span><i /> Your money plan</span>
+            <span>July</span>
           </div>
-
-          <div className="rounded-xl border p-4 bg-white">
-            <div className="flex items-center justify-between">
-              <span className="pill pill-sky">Family</span>
-              <Users className="h-5 w-5 opacity-60" />
-            </div>
-            <div className="price mt-1">£8.99/mo</div>
-            <ul className="text-sm space-y-2 mt-3">
-              <Check text="Unlimited parents" />
-              <Check text="Unlimited caregivers" />
-              <Check text="All four planners" />
-              <Check text="Priority support & reminders" />
-            </ul>
+          <div className="preview-hero-card">
+            <div><small>On track this month</small><strong>£1,240</strong><span>left to decide together</span></div>
+            <div className="preview-ring"><span>18%</span></div>
+          </div>
+          <div className="preview-metrics">
+            <div><PiggyBank /><span>Future you</span><strong>£720</strong></div>
+            <div><CreditCard /><span>Debt remaining</span><strong>£8,450</strong></div>
+          </div>
+          <div className="preview-goal">
+            <div><span>Emergency fund</span><b>72%</b></div>
+            <i><em /></i>
+            <small>£5,400 of £7,500</small>
           </div>
         </div>
       </section>
 
-      <footer className="max-w-6xl mx-auto px-4 sm:px-6 py-10 text-sm opacity-70">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>© {new Date().getFullYear()} hearthPlan</div>
-          <div className="flex items-center gap-3">
-            <a className="hover:underline" href="mailto:robert@hearthplan.co.uk">Contact</a>
-          </div>
+      <section className="trust-strip">
+        <span><ShieldCheck size={17} /> Private household space</span>
+        <span><HeartHandshake size={17} /> Designed to use together</span>
+        <span><Landmark size={17} /> Made for UK family finances</span>
+      </section>
+
+      <section className="marketing-section" id="inside">
+        <div className="marketing-section-heading">
+          <span>The whole picture</span>
+          <h2>Money decisions don’t happen in isolation.</h2>
+          <p>Your childcare, leave and activities all affect the plan. HearthPlan keeps those connections visible.</p>
         </div>
+        <div className="feature-grid">
+          <article className="feature-money">
+            <div><PiggyBank /></div>
+            <span>01 · Monthly clarity</span>
+            <h3>Give every pound a purpose</h3>
+            <p>Bring take-home pay, household costs and savings into one calm monthly view with a clear “left to decide” figure.</p>
+          </article>
+          <article className="feature-money">
+            <div><CreditCard /></div>
+            <span>02 · Debt freedom</span>
+            <h3>Turn balances into a finish line</h3>
+            <p>Compare avalanche and snowball strategies, add overpayments, and see the time and interest impact immediately.</p>
+          </article>
+          <article className="feature-money">
+            <div><Target /></div>
+            <span>03 · Your future</span>
+            <h3>Make “one day” measurable</h3>
+            <p>Set an emergency fund, family goals and your financial-independence number, then track shared progress month by month.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="marketing-section how-section" id="how-it-works">
+        <div className="how-copy">
+          <span>A weekly money rhythm</span>
+          <h2>Ten calm minutes. One shared direction.</h2>
+          <p>HearthPlan is built around a simple household check-in, not endless admin.</p>
+        </div>
+        <ol className="how-list">
+          <li><b>1</b><div><strong>Check the month</strong><span>Confirm income, bills and family costs.</span></div></li>
+          <li><b>2</b><div><strong>Choose the next move</strong><span>Direct the surplus to debt, safety or a goal.</span></div></li>
+          <li><b>3</b><div><strong>Watch the future change</strong><span>See milestones move closer as your plan improves.</span></div></li>
+        </ol>
+      </section>
+
+      <section className="marketing-cta">
+        <div>
+          <span>Build the life behind the numbers</span>
+          <h2>Your family’s financial future deserves a plan you both understand.</h2>
+        </div>
+        <SignInButton />
+      </section>
+
+      <footer className="marketing-footer">
+        <HearthPlanLogo size={40} variant="app" />
+        <span>© {new Date().getFullYear()} HearthPlan</span>
+        <a href="mailto:robert@hearthplan.co.uk">Contact</a>
       </footer>
     </main>
   );

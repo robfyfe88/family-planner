@@ -3,7 +3,7 @@
 import React from "react";
 import AnnualLeavePlanner from "./AnnualLeavePlanner";
 import NurseryPlannerPage from "./NurseryCostPlanner";
-import FamilyBudgetPlanner from "./FamilyBudgetPlanner";
+import FinanceHub from "./FinanceHub";
 import ActivitiesPlanner from "./ActivitiesPlannner";
 import HearthPlanLogo from "@/components/HearthPlanLogo";
 import { UserMenu } from "@/components/ui/UserMenu";
@@ -136,8 +136,8 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                   active={tab === "budget"}
                   onClick={() => setTab("budget")}
                   ariaControls={ids.budgetPanel}
-                  label="Family Budget"
-                  accent="var(--accent-4)"
+                  label="Money"
+                  accent="var(--money-ink)"
                 />
               )}
               {showNursery && (
@@ -146,7 +146,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                   active={tab === "nursery"}
                   onClick={() => setTab("nursery")}
                   ariaControls={ids.nurseryPanel}
-                  label="Childcare Costs"
+                label="Childcare"
                   accent="var(--accent-2)"
                 />
               )}
@@ -155,7 +155,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                 active={tab === "leave"}
                 onClick={() => setTab("leave")}
                 ariaControls={ids.leavePanel}
-                label="Annual Leave"
+                label="Leave"
                 accent="var(--accent)"
               />
               <GridTab
@@ -183,9 +183,9 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                 active={tab === "budget"}
                 onClick={() => setTab("budget")}
                 ariaControls={ids.budgetPanel}
-                accent="var(--accent-4)"
+                accent="var(--money-ink)"
               >
-                Family Budget
+                Money
               </PillTab>
             )}
             {showNursery && (
@@ -196,7 +196,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                 ariaControls={ids.nurseryPanel}
                 accent="var(--accent-2)"
               >
-                Childcare Costs
+                Childcare
               </PillTab>
             )}
             <PillTab
@@ -206,7 +206,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
               ariaControls={ids.leavePanel}
               accent="var(--accent)"
             >
-              Annual Leave
+                Leave
             </PillTab>
             <PillTab
               id={ids.activitiesBtn}
@@ -215,7 +215,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
               ariaControls={ids.activitiesPanel}
               accent="var(--accent-5)"
             >
-              Activities Planner
+                Activities
             </PillTab>
           </div>
         </nav>
@@ -236,7 +236,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
 
         {showBudget && (
           <Panel id={ids.budgetPanel} labelledBy={ids.budgetBtn} hidden={tab !== "budget"}>
-            <FamilyBudgetPlanner />
+            <FinanceHub />
           </Panel>
         )}
 

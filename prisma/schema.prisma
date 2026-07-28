@@ -150,6 +150,9 @@ model Household {
   Transaction       Transaction[]
   RecurringTemplate RecurringTemplate[]
   PotMonthly        PotMonthly[]
+  financialProfile FinancialProfile?
+  debts             Debt[]
+  financialGoals    FinancialGoal[]
 
   // Planner v2
   plannerActivities  PlannerActivity[]
@@ -616,4 +619,50 @@ model BudgetLineOverride {
 
   @@unique([lineId, year, month])
   @@index([householdId, year, month])
+}
+
+/**
+ * ---------- Financial freedom ----------
+ */
+
+model FinancialProfile {
+  householdId        String   @id
+  debtStrategy       String   @default("avalanche")
+  extraPaymentPence  Int      @default(0)
+  fireTargetPence    Int      @default(0)
+  emergencyFundMonths Int     @default(3)
+  updatedAt          DateTime @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+model Debt {
+  id             String   @id @default(cuid())
+  householdId    String
+  name           String
+  balancePence   Int      @default(0)
+  aprBasisPoints Int      @default(0)
+  minimumPence   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+}
+
+model FinancialGoal {
+  id             String    @id @default(cuid())
+  householdId    String
+  name           String
+  targetPence    Int       @default(0)
+  savedPence     Int       @default(0)
+  monthlyPence   Int       @default(0)
+  targetDate     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
 }
