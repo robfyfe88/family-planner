@@ -255,7 +255,12 @@ export default function FinanceHub() {
       )}
 
       {view === "plan" && (
-        <ModernMonthlyPlan />
+        <ModernMonthlyPlan
+          debts={debts}
+          goals={goals}
+          strategy={profile.strategy}
+          emergencyFundMonths={profile.emergencyFundMonths}
+        />
       )}
 
       {view === "debt" && (

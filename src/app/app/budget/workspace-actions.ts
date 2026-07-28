@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getHouseholdIdOrThrow } from "@/lib/household";
 
 const DEFAULT_CATEGORIES = [
+  ["Salary", "Income", "income", false],
+  ["Benefits", "Income", "income", false],
+  ["Refunds", "Income", "income", false],
+  ["Other income", "Income", "income", false],
   ["Home", "Essentials"],
   ["Groceries", "Essentials"],
   ["Transport", "Essentials"],
@@ -18,22 +22,43 @@ const DEFAULT_CATEGORIES = [
   ["Other", "Other"],
 ] as const;
 
+const BANK_CATEGORY_ALIASES: Record<string, string> = {
+  BILLS_AND_SERVICES: "Home",
+  CASH: "Other",
+  CASH_WITHDRAWAL: "Other",
+  CHILDCARE: "Childcare",
+  EATING_OUT: "Eating out",
+  ENTERTAINMENT: "Kids & activities",
+  FOOD_AND_DRINK: "Groceries",
+  GENERAL: "Other",
+  GROCERIES: "Groceries",
+  HEALTH: "Health",
+  INCOME: "Other income",
+  PAYMENTS: "Other",
+  SALARY: "Salary",
+  SHOPPING: "Shopping",
+  TRANSPORT: "Transport",
+};
+
 const monthBounds = (year: number, month: number) => ({
   gte: new Date(Date.UTC(year, month - 1, 1)),
   lt: new Date(Date.UTC(year, month, 1)),
 });
 
 async function ensureCategories(householdId: string) {
-  const count = await prisma.budgetCategory.count({ where: { householdId, flow: "expense" } });
-  if (count > 0) return;
   await prisma.budgetCategory.createMany({
-    data: DEFAULT_CATEGORIES.map(([name, group]) => ({
-      householdId,
-      name,
-      group,
-      isSpending: true,
-      flow: "expense" as const,
-    })),
+    data: DEFAULT_CATEGORIES.map((category) => {
+      const [name, group] = category;
+      const flow = category.length > 2 ? category[2] : "expense";
+      const isSpending = category.length > 3 ? category[3] : true;
+      return {
+        householdId,
+        name,
+        group,
+        isSpending,
+        flow: flow as "income" | "expense",
+      };
+    }),
     skipDuplicates: true,
   });
 }
@@ -101,10 +126,11 @@ export async function setTransactionCategory(transactionId: string, categoryId: 
   if (!transaction || !category) throw new Error("Transaction or category not found");
   await prisma.transaction.update({ where: { id: transactionId }, data: { categoryId } });
   if (learn && transaction.description) {
+    const learnedText = transaction.description.split("—")[0].toLowerCase().trim();
     await prisma.categoryRule.upsert({
-      where: { householdId_matchText: { householdId, matchText: transaction.description.toLowerCase().trim() } },
+      where: { householdId_matchText: { householdId, matchText: learnedText } },
       update: { categoryId },
-      create: { householdId, categoryId, matchText: transaction.description.toLowerCase().trim() },
+      create: { householdId, categoryId, matchText: learnedText },
     });
   }
   return { ok: true };
@@ -157,6 +183,7 @@ export async function importStatementRows(rows: Array<{
   description: string;
   amount: number;
   flow?: "income" | "expense";
+  bankCategory?: string;
 }>, accountName: string) {
   const householdId = await getHouseholdIdOrThrow();
   await ensureCategories(householdId);
@@ -186,12 +213,16 @@ export async function importStatementRows(rows: Array<{
     }
     const normalized = description.toLowerCase();
     const rule = rules.find((item) => normalized.includes(item.matchText));
-    const fallback = categories.find((item) => item.name === "Other" && item.flow === "expense");
+    const bankCategory = row.bankCategory?.trim().toUpperCase().replace(/[\s-]+/g, "_") || "";
+    const mappedName = BANK_CATEGORY_ALIASES[bankCategory];
+    const mappedCategory = mappedName
+      ? categories.find((item) => item.name === mappedName && item.flow === flow)
+      : undefined;
     await prisma.transaction.create({
       data: {
         householdId,
         accountId: account.id,
-        categoryId: rule?.categoryId || (flow === "expense" ? fallback?.id : null),
+        categoryId: rule?.categoryId || mappedCategory?.id || null,
         date,
         amountPence,
         flow,
