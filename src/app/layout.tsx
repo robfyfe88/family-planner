@@ -31,17 +31,17 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       images: [{
-        url: new URL("/og.png", base).toString(),
+        url: new URL("/og-transactions.png", base).toString(),
         width: 1200,
         height: 630,
-        alt: "HearthPlan — a clearer financial future for your family",
+        alt: "HearthPlan — know where every pound went",
       }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [new URL("/og.png", base).toString()],
+      images: [new URL("/og-transactions.png", base).toString()],
     },
   };
 }

@@ -153,6 +153,7 @@ model Household {
   financialProfile FinancialProfile?
   debts             Debt[]
   financialGoals    FinancialGoal[]
+  categoryRules     CategoryRule[]
 
   // Planner v2
   plannerActivities  PlannerActivity[]
@@ -426,6 +427,7 @@ model BudgetCategory {
   transactions      Transaction[]
   PotAllocation     PotAllocation[]
   RecurringTemplate RecurringTemplate[]
+  categoryRules     CategoryRule[]
 
   // Back-relation for planner budget lines
   budgetLines BudgetLine[] @relation("CategoryBudgetLines")
@@ -619,6 +621,19 @@ model BudgetLineOverride {
 
   @@unique([lineId, year, month])
   @@index([householdId, year, month])
+}
+
+model CategoryRule {
+  id          String @id @default(cuid())
+  householdId String
+  categoryId  String
+  matchText   String
+
+  household Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category  BudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, matchText])
+  @@index([householdId])
 }
 
 /**

@@ -23,7 +23,7 @@ import {
   TrendingUp,
   WalletCards,
 } from "lucide-react";
-import FamilyBudgetPlanner from "./FamilyBudgetPlanner";
+import ModernMonthlyPlan from "./ModernMonthlyPlan";
 import { fetchBudgetRowsForMonth } from "@/app/app/budget/actions";
 import { fetchPotPlans, fetchPots } from "@/app/app/budget/pots-actions";
 import {
@@ -255,17 +255,7 @@ export default function FinanceHub() {
       )}
 
       {view === "plan" && (
-        <div className="finance-panel planner-panel">
-          <div className="section-heading">
-            <div>
-              <span className="section-kicker">Build the month</span>
-              <h2>Give every pound a job</h2>
-              <p>Plan income, household costs and savings together. Changes feed the overview above.</p>
-            </div>
-            <button className="soft-button" onClick={() => load(true)}><RefreshCw size={16} /> Update overview</button>
-          </div>
-          <FamilyBudgetPlanner />
-        </div>
+        <ModernMonthlyPlan />
       )}
 
       {view === "debt" && (
