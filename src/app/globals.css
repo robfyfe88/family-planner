@@ -978,7 +978,7 @@ input[type="text"].no-spinners {
 
 .workspace-monthbar {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   align-items: center;
   gap: 1.2rem;
   padding: .65rem;
@@ -986,6 +986,7 @@ input[type="text"].no-spinners {
   border-radius: .9rem;
   background: rgba(255,253,248,.8);
 }
+.forecast-button { height: 32px; white-space: nowrap; }
 .month-stepper { display: inline-flex; align-items: center; gap: .4rem; }
 .month-stepper button { display: grid; width: 32px; height: 32px; place-items: center; border-radius: .55rem; color: #6e7a76; }
 .month-stepper button:hover { background: #eef1eb; }
@@ -1146,6 +1147,7 @@ input[type="text"].no-spinners {
 .order-lines { display: grid; gap: .4rem; margin-top: .8rem; padding-top: .55rem; border-top: 1px solid #eceae3; }
 .order-lines > span { display: flex; justify-content: space-between; gap: .7rem; font-size: .65rem; }
 .order-lines b { font-weight: 650; }
+.order-lines b small { display: block; margin-top: .1rem; color: #89948f; font-size: .54rem; font-weight: 550; }
 .order-lines em { color: #64736e; font-style: normal; font-variant-numeric: tabular-nums; }
 .order-lines small { color: #7d8985; font-size: .62rem; line-height: 1.45; }
 .empty-order-action { padding: .65rem; border: 1px dashed #b9c8c1; border-radius: .65rem; color: var(--money-mint-dark); background: #f1f6f3; font-size: .64rem; font-weight: 700; text-align: left; }
@@ -1165,6 +1167,14 @@ input[type="text"].no-spinners {
 .recommendation-split small { margin-top: .12rem; color: #b7c6c0; font-size: .56rem; }
 .recommendation-split strong { color: #c8eadb; font-size: 1rem; }
 .recommendation-note { display: block; margin-top: .75rem; color: #9faeaa; font-size: .56rem; }
+.payday-routine { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .7rem; padding: .7rem .8rem; border: 1px solid #dce8e1; border-radius: .8rem; background: #eef6f2; }
+.payday-routine > div { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.payday-routine svg { width: 19px; flex: none; color: var(--money-mint-dark); }
+.payday-routine strong,
+.payday-routine small { display: block; }
+.payday-routine strong { font-size: .68rem; }
+.payday-routine small { margin-top: .12rem; color: #71817b; font-size: .58rem; line-height: 1.4; }
+.payday-routine .soft-button { flex: none; }
 .plan-layout { display: grid; grid-template-columns: 1fr minmax(230px, .33fr); gap: .7rem; }
 .category-plan-list { overflow: hidden; border: 1px solid #e6e4dc; border-radius: .8rem; }
 .category-plan-row { display: grid; grid-template-columns: auto 1fr minmax(130px, .35fr); align-items: center; gap: .65rem; min-height: 61px; padding: .55rem .7rem; border-top: 1px solid #eceae3; background: #fff; }
@@ -1255,6 +1265,8 @@ input[type="text"].no-spinners {
   .workspace-actions button { flex: 1; }
   .workspace-monthbar { grid-template-columns: 1fr auto; }
   .month-status { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
+  .workspace-monthbar > .icon-button { grid-column: 2; grid-row: 1; }
+  .forecast-button { grid-column: 1 / -1; grid-row: 3; width: 100%; }
   .workspace-pulse-card,
   .review-pulse { min-height: 130px; }
   .workspace-tabs { overflow-x: auto; }
@@ -1265,6 +1277,8 @@ input[type="text"].no-spinners {
   .category-plan-row { grid-template-columns: auto 1fr; }
   .category-plan-row label { grid-column: 1 / -1; }
   .recommendation-split { grid-template-columns: 1fr; }
+  .payday-routine { align-items: stretch; flex-direction: column; }
+  .payday-routine .soft-button { width: 100%; }
   .rule-builder { grid-template-columns: 1fr; }
   .rules-list article { grid-template-columns: 1fr auto; }
   .rules-list article > svg { display: none; }

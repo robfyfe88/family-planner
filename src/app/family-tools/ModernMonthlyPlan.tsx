@@ -5,6 +5,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Building2,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -37,7 +38,6 @@ import {
   importStatementRows,
   removeCategoryRule,
   saveCategoryRule,
-  setCategoryBudget,
   setTransactionCategory,
 } from "@/app/app/budget/workspace-actions";
 
@@ -72,6 +72,52 @@ const categoryTone = (name: string) => {
   const tones = ["mint", "blue", "coral", "lavender", "gold", "slate"];
   return tones[[...name].reduce((sum, char) => sum + char.charCodeAt(0), 0) % tones.length];
 };
+
+function estimateDebtFreeMonths(
+  debts: Debt[],
+  strategy: "avalanche" | "snowball",
+  extraPayment: number
+) {
+  const working = debts
+    .filter((debt) => debt.balance > 0)
+    .map((debt) => ({ ...debt }));
+  if (working.length === 0) return 0;
+
+  const monthlyBudget = working.reduce((sum, debt) => sum + debt.minimum, 0) + Math.max(0, extraPayment);
+  if (monthlyBudget <= 0) return 600;
+
+  let months = 0;
+  while (working.some((debt) => debt.balance > 0.005) && months < 600) {
+    months += 1;
+    working.forEach((debt) => {
+      if (debt.balance > 0) debt.balance += debt.balance * (debt.apr / 100 / 12);
+    });
+    let remaining = monthlyBudget;
+    working.forEach((debt) => {
+      if (debt.balance <= 0 || remaining <= 0) return;
+      const payment = Math.min(debt.balance, debt.minimum, remaining);
+      debt.balance -= payment;
+      remaining -= payment;
+    });
+    const ordered = working
+      .filter((debt) => debt.balance > 0)
+      .sort((a, b) => strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance);
+    ordered.forEach((debt) => {
+      if (remaining <= 0) return;
+      const payment = Math.min(debt.balance, remaining);
+      debt.balance -= payment;
+      remaining -= payment;
+    });
+  }
+  return months;
+}
+
+function paydayLabel(year: number, month: number, day?: number | null) {
+  if (!day) return "Payday not set";
+  const finalDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const date = new Date(Date.UTC(year, month - 1, Math.min(day, finalDay)));
+  return date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
 
 export default function ModernMonthlyPlan({
   debts = [],
@@ -141,9 +187,13 @@ export default function ModernMonthlyPlan({
     .filter((item) => item.flow === "income")
     .reduce((sum, item) => sum + item.amount, 0);
   const reviewCount = data.transactions.filter((item) => item.needsReview).length;
-  const monthProgress = cursor.year === now.getFullYear() && cursor.month === now.getMonth() + 1
+  const selectedMonthStart = Date.UTC(cursor.year, cursor.month - 1, 1);
+  const currentMonthStart = Date.UTC(now.getFullYear(), now.getMonth(), 1);
+  const isCurrentMonth = selectedMonthStart === currentMonthStart;
+  const isFutureMonth = selectedMonthStart > currentMonthStart;
+  const monthProgress = isCurrentMonth
     ? Math.round((now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()) * 100)
-    : 100;
+    : isFutureMonth ? 0 : 100;
 
   const filtered = data.transactions.filter((item) => {
     const matchesSearch = item.description.toLowerCase().includes(search.toLowerCase());
@@ -158,16 +208,18 @@ export default function ModernMonthlyPlan({
       spent: data.transactions
         .filter((item) => item.flow === "expense" && item.categoryId === category.id)
         .reduce((sum, item) => sum + item.amount, 0),
+      transactionCount: data.transactions
+        .filter((item) => item.flow === "expense" && item.categoryId === category.id)
+        .length,
     }))
     .sort((a, b) => b.spent - a.spent || a.name.localeCompare(b.name));
 
-  const categoryPlanned = categoryTotals.reduce((sum, category) => sum + category.planned, 0);
   const debtMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
-  const coreOutgoings = plannedExpenses + categoryPlanned + debtMinimums;
+  const coreOutgoings = plannedExpenses + debtMinimums;
   const availableToAssign = plannedIncome - coreOutgoings;
   const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
   const emergencySaved = emergencyGoal?.saved || 0;
-  const oneMonthBuffer = Math.max(0, plannedExpenses + debtMinimums);
+  const oneMonthBuffer = Math.max(0, coreOutgoings);
   const fullEmergencyTarget = oneMonthBuffer * Math.max(1, emergencyFundMonths);
   const needsStarterBuffer = emergencySaved < oneMonthBuffer;
   const orderedDebts = [...debts]
@@ -180,6 +232,12 @@ export default function ModernMonthlyPlan({
     : 0;
   const debtOverpayment = priorityDebt ? Math.max(0, positiveAvailable - emergencyContribution) : 0;
   const futureContribution = priorityDebt ? 0 : Math.max(0, positiveAvailable - emergencyContribution);
+  const debtFreeMonths = estimateDebtFreeMonths(debts, strategy, debtOverpayment);
+  const debtFreeDate = debtFreeMonths > 0 && debtFreeMonths < 600
+    ? new Date(Date.UTC(cursor.year, cursor.month - 1 + debtFreeMonths, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric" })
+    : "";
+  const nextCursorDate = new Date(Date.UTC(cursor.year, cursor.month, 1));
+  const nextCursor = { year: nextCursorDate.getUTCFullYear(), month: nextCursorDate.getUTCMonth() + 1 };
 
   async function categorise(transaction: WorkspaceTransaction, categoryId: string, learn = true) {
     const category = data?.categories.find((item) => item.id === categoryId);
@@ -217,9 +275,12 @@ export default function ModernMonthlyPlan({
           <button onClick={() => moveMonth(1)} aria-label="Next month"><ChevronRight /></button>
         </div>
         <div className="month-status">
-          <span>{monthProgress}% through month</span>
+          <span>{isFutureMonth ? "Forecast month" : `${monthProgress}% through month`}</span>
           <div><i style={{ width: `${monthProgress}%` }} /></div>
         </div>
+        <button className="soft-button forecast-button" onClick={() => { setCursor(nextCursor); setView("plan"); }}>
+          Forecast {MONTHS[nextCursor.month - 1]}
+        </button>
         <button className="icon-button" onClick={() => load(true)} aria-label="Refresh month">
           <RefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
         </button>
@@ -227,7 +288,7 @@ export default function ModernMonthlyPlan({
 
       <div className="workspace-pulse">
         <button className="pulse-button" onClick={() => setModal("income")} aria-label="Add or update monthly income">
-          <PulseCard tone="green" icon={<ArrowDownLeft />} label="Money in" value={money(actualIncome || plannedIncome)} note={actualIncome ? `${money(plannedIncome)} planned` : plannedIncome ? "Planned income · click to update" : "Start here · add take-home pay"} />
+          <PulseCard tone="green" icon={<ArrowDownLeft />} label="Expected income" value={money(plannedIncome)} note={actualIncome ? `${money(actualIncome)} received so far` : plannedIncome ? "Click to add or update pay" : "Start here · add take-home pay"} />
         </button>
         <PulseCard tone="coral" icon={<ArrowUpRight />} label="Money out" value={money(spending)} note={`${data.transactions.filter((item) => item.flow === "expense").length} transactions`} />
         <PulseCard tone="blue" icon={<WalletCards />} label="Unassigned" value={money(availableToAssign)} note={availableToAssign >= 0 ? "Available for your next priority" : "Your plan is over income"} />
@@ -305,7 +366,7 @@ export default function ModernMonthlyPlan({
           </div>
           <div className="category-grid">
             {categoryTotals.map((category) => {
-              const used = category.planned > 0 ? (category.spent / category.planned) * 100 : 0;
+              const share = spending > 0 ? (category.spent / spending) * 100 : 0;
               return (
                 <article className="category-card" key={category.id}>
                   <div className="category-card-head">
@@ -313,8 +374,8 @@ export default function ModernMonthlyPlan({
                     <div><strong>{category.name}</strong><small>{category.group}</small></div>
                     <b>{money(category.spent)}</b>
                   </div>
-                  <div className="category-budget-row"><span>{category.planned ? `${Math.round(used)}% of budget` : "No budget set"}</span><span>{category.planned ? money(category.planned) : "—"}</span></div>
-                  <div className="category-track"><i className={used > 100 ? "over" : ""} style={{ width: `${Math.min(100, used)}%` }} /></div>
+                  <div className="category-budget-row"><span>{category.transactionCount} transactions</span><span>{Math.round(share)}% of spending</span></div>
+                  <div className="category-track"><i style={{ width: `${Math.min(100, share)}%` }} /></div>
                 </article>
               );
             })}
@@ -328,6 +389,10 @@ export default function ModernMonthlyPlan({
             <div><span className="section-kicker">Your monthly order</span><h3>Income first. Priorities next.</h3><p>Update the numbers when life changes. HearthPlan works out what is genuinely available after your commitments.</p></div>
             <div className={availableToAssign >= 0 ? "plan-balance" : "plan-balance negative"}><span>{availableToAssign >= 0 ? "Available to assign" : "Plan shortfall"}</span><strong>{money(Math.abs(availableToAssign))}</strong></div>
           </div>
+          <div className="payday-routine">
+            <div><CalendarDays /><span><strong>Your once-a-month check-in</strong><small>1. Enter both take-home pays &nbsp; 2. Confirm every commitment &nbsp; 3. Follow the debt and savings amounts below</small></span></div>
+            <button className="soft-button" onClick={() => { setCursor(nextCursor); setView("plan"); }}>Preview {MONTHS[nextCursor.month - 1]}</button>
+          </div>
           <div className="money-order">
             <section className="order-card income-order">
               <div className="order-number">1</div>
@@ -339,7 +404,10 @@ export default function ModernMonthlyPlan({
               <button className="soft-button" onClick={() => setModal("income")}><Plus size={15} /> Add income</button>
               <div className="order-lines">
                 {incomeRows.map((income) => (
-                  <span key={income.id || income.label}><b>{income.label}</b><em>{money(income.amount)}</em></span>
+                  <span key={income.id || income.label}>
+                    <b>{income.label}<small>{paydayLabel(cursor.year, cursor.month, income.expectedDay)}</small></b>
+                    <em>{money(income.amount)}</em>
+                  </span>
                 ))}
                 {incomeRows.length === 0 && <button className="empty-order-action" onClick={() => setModal("income")}>Add salary, benefits or other regular income</button>}
               </div>
@@ -359,54 +427,28 @@ export default function ModernMonthlyPlan({
               </div>
             </section>
 
-            <section className="order-card">
-              <div className="order-number">3</div>
-              <div className="order-heading">
-                <span className="section-kicker">Set spending guardrails</span>
-                <h3>{money(categoryPlanned)}</h3>
-                <p>Monthly limits for food, transport, family life and other flexible spending.</p>
-              </div>
-              <div className="category-plan-list compact">
-              {categoryTotals.map((category) => (
-                <article className="category-plan-row" key={category.id}>
-                  <span className={`category-dot ${categoryTone(category.name)}`} />
-                  <div><strong>{category.name}</strong><small>{money(category.spent)} spent</small></div>
-                  <label><span>Monthly budget</span><div>£<input type="number" min="0" step="10" defaultValue={category.planned} onBlur={async (event) => {
-                    const planned = Math.max(0, Number(event.target.value) || 0);
-                    setData((current) => current ? {
-                      ...current,
-                      categories: current.categories.map((item) => item.id === category.id ? { ...item, planned } : item),
-                    } : current);
-                    await setCategoryBudget(category.id, cursor.year, cursor.month, planned);
-                    setToast(`${category.name} budget updated.`);
-                  }} /></div></label>
-                </article>
-              ))}
-              </div>
-            </section>
-
             <section className={`order-card recommendation-card ${availableToAssign < 0 ? "warning" : ""}`}>
-              <div className="order-number">4</div>
+              <div className="order-number">3</div>
               <div className="order-heading">
                 <span className="section-kicker">Recommended next move</span>
                 <h3>{availableToAssign < 0 ? "Close the gap before overpaying" : priorityDebt ? `Focus on ${priorityDebt.name}` : "Build your financial future"}</h3>
                 <p>
                   {availableToAssign < 0
-                    ? `Your planned commitments are ${money(Math.abs(availableToAssign))} above income. Reduce a spending limit or update income before adding extra debt or savings payments.`
+                    ? `Your planned commitments are ${money(Math.abs(availableToAssign))} above income. Review the commitments or update expected pay before adding extra debt or savings payments.`
                     : priorityDebt
-                      ? `${strategy === "avalanche" ? "Highest APR first saves the most interest." : "Smallest balance first creates the quickest win."} Keep every minimum payment running.`
+                      ? `${strategy === "avalanche" ? "Highest APR first saves the most interest." : "Smallest balance first creates the quickest win."} Every pound left after commitments is assigned below.`
                       : "With no debts to overpay, direct the remaining money to your emergency fund and long-term goals."}
                 </p>
               </div>
               <div className="recommendation-split">
                 <RecommendationLine icon={<ShieldCheck />} label="Emergency buffer" value={emergencyContribution} note={fullEmergencyTarget > 0 ? `${money(emergencySaved)} of ${money(fullEmergencyTarget)} target saved` : "Set after essential costs are entered"} />
                 {priorityDebt ? (
-                  <RecommendationLine icon={<Target />} label={`Extra to ${priorityDebt.name}`} value={debtOverpayment} note={`${money(priorityDebt.balance)} balance · ${priorityDebt.apr.toFixed(1)}% APR`} />
+                  <RecommendationLine icon={<Target />} label={`Extra to ${priorityDebt.name}`} value={debtOverpayment} note={`${money(priorityDebt.balance)} balance · ${priorityDebt.apr.toFixed(1)}% APR${debtFreeDate ? ` · forecast debt-free ${debtFreeDate}` : ""}`} />
                 ) : (
                   <RecommendationLine icon={<Sparkles />} label="Savings and investing" value={futureContribution} note="After this month’s costs and safety buffer" />
                 )}
               </div>
-              <small className="recommendation-note">This is guidance based on the figures above, not financial advice. Update the month whenever income or bills change.</small>
+              <small className="recommendation-note">Until one month of commitments is saved, the extra is split equally between your emergency buffer and priority debt. After that starter buffer, all extra targets the priority debt. Update the month whenever pay or bills change.</small>
             </section>
           </div>
         </div>
@@ -494,6 +536,7 @@ function ModalFrame({ title, subtitle, onClose, children }: { title: string; sub
 function IncomeModal({ year, month, onClose, onSaved }: { year: number; month: number; onClose: () => void; onSaved: () => void }) {
   const [label, setLabel] = React.useState("");
   const [amount, setAmount] = React.useState("");
+  const [expectedDay, setExpectedDay] = React.useState("");
   const [scope, setScope] = React.useState<Scope>("from-now-on");
   const [saving, setSaving] = React.useState(false);
 
@@ -509,12 +552,14 @@ function IncomeModal({ year, month, onClose, onSaved }: { year: number; month: n
         year,
         month1to12: month,
         scope,
+        expectedDay: expectedDay ? Math.min(31, Math.max(1, Number(expectedDay))) : null,
       });
       onSaved();
     }}>
       <label className="wide"><span>Income name</span><input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. Rob salary, Laura salary, Child Benefit" /></label>
       <label><span>Monthly take-home amount</span><div className="currency-input">£<input type="number" required min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div></label>
-      <label><span>Use this amount</span><select value={scope} onChange={(event) => setScope(event.target.value as Scope)}><option value="from-now-on">This month and future months</option><option value="this-month">Only this month</option></select></label>
+      <label><span>Usual payday</span><input type="number" min="1" max="31" placeholder="Day of month" value={expectedDay} onChange={(event) => setExpectedDay(event.target.value)} /></label>
+      <label className="wide"><span>Use this amount</span><select value={scope} onChange={(event) => setScope(event.target.value as Scope)}><option value="from-now-on">{MONTHS[month - 1]} and future months</option><option value="this-month">Only {MONTHS[month - 1]}</option></select></label>
       <button className="primary-button wide" disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : <ArrowDownLeft size={16} />} Save income</button>
     </form>
   </ModalFrame>;

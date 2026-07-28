@@ -593,6 +593,7 @@ model BudgetLine {
   owner              BudgetOwner @default(joint)
   categoryId         String?
   recurrence         Recurrence  @default(monthly) // none | monthly | weekly | yearly | custom
+  expectedDay        Int?        // usual day of month for forecasted income
   effectiveFrom      DateTime    @default(now())
   effectiveTo        DateTime?
   defaultAmountPence Int         @default(0)

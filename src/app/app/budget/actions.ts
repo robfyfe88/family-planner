@@ -12,6 +12,7 @@ export type Row = {
   amount: number;
   owner?: Owner;
   recurrence?: RecurrenceUI;
+  expectedDay?: number | null;
 };
 
 export type Scope = "this-month" | "from-now-on" | "entire-range";
@@ -128,6 +129,7 @@ export async function fetchBudgetRowsForMonth(
     amount: fromPence(l.overrides[0]?.amountPence ?? l.defaultAmountPence ?? 0),
     owner: l.owner as Owner,
     recurrence: "recurring",
+    expectedDay: l.expectedDay,
   });
 
   const baseIncomes: Row[] = lines
@@ -298,6 +300,7 @@ export async function upsertBudgetRowScoped(
     year: number;
     month1to12: number;
     scope: Scope;
+    expectedDay?: number | null;
   }
 ): Promise<Row> {
   const householdId = await getHouseholdIdOrThrow();
@@ -335,13 +338,24 @@ export async function upsertBudgetRowScoped(
           effectiveFrom: effFrom,
           effectiveTo: null,
           defaultAmountPence,
+          expectedDay: payload.expectedDay ?? null,
         },
       });
     } else {
-      if (line.label !== label || line.flow !== flow || (line.owner as Owner) !== owner) {
+      if (
+        line.label !== label ||
+        line.flow !== flow ||
+        (line.owner as Owner) !== owner ||
+        (payload.expectedDay !== undefined && line.expectedDay !== payload.expectedDay)
+      ) {
         line = await tx.budgetLine.update({
           where: { id: line.id },
-          data: { label, flow, owner },
+          data: {
+            label,
+            flow,
+            owner,
+            ...(payload.expectedDay !== undefined ? { expectedDay: payload.expectedDay } : {}),
+          },
         });
       }
     }
@@ -411,6 +425,7 @@ export async function upsertBudgetRowScoped(
       amount: fromPence(amountForMonth),
       owner: line.owner as Owner,
       recurrence: "recurring" as const,    // 👈 fix
+      expectedDay: line.expectedDay,
     };
   });
 }
