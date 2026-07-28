@@ -7,7 +7,7 @@ const pence = (value: number) => Math.max(0, Math.round((Number(value) || 0) * 1
 
 export async function fetchFreedomData() {
   const householdId = await getHouseholdIdOrThrow();
-  const [profile, debts, goals] = await Promise.all([
+  const [profile, debts, existingGoals] = await Promise.all([
     prisma.financialProfile.upsert({
       where: { householdId },
       update: {},
@@ -16,6 +16,13 @@ export async function fetchFreedomData() {
     prisma.debt.findMany({ where: { householdId }, orderBy: { createdAt: "asc" } }),
     prisma.financialGoal.findMany({ where: { householdId }, orderBy: { createdAt: "asc" } }),
   ]);
+  let goals = existingGoals;
+  if (!goals.some((goal) => /emergency|rainy day|buffer/i.test(goal.name))) {
+    const emergencyFund = await prisma.financialGoal.create({
+      data: { householdId, name: "Emergency fund" },
+    });
+    goals = [emergencyFund, ...goals];
+  }
 
   return {
     profile: {

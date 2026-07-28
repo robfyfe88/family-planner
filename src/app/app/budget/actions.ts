@@ -430,6 +430,46 @@ export async function upsertBudgetRowScoped(
   });
 }
 
+export async function saveCommitment(payload: {
+  id?: string;
+  label: string;
+  amount: number;
+  owner?: Owner;
+  year: number;
+  month1to12: number;
+  scope: Scope;
+  expectedDay?: number | null;
+}) {
+  const householdId = await getHouseholdIdOrThrow();
+  const label = normalizeLabel(payload.label);
+
+  if (/\b(credit\s*card|loan)\b/i.test(label)) {
+    const existing = await prisma.debt.findFirst({
+      where: { householdId, name: { equals: label, mode: "insensitive" } },
+    });
+    const minimumPence = toPence(payload.amount);
+    const debt = existing
+      ? await prisma.debt.update({
+        where: { id: existing.id },
+        data: {
+          name: label,
+          ...(existing.minimumPence === 0 ? { minimumPence } : {}),
+        },
+      })
+      : await prisma.debt.create({
+        data: {
+          householdId,
+          name: label,
+          minimumPence,
+        },
+      });
+    return { kind: "debt" as const, id: debt.id };
+  }
+
+  const row = await upsertBudgetRowScoped("expense", payload);
+  return { kind: "commitment" as const, row };
+}
+
 export async function deleteBudgetRowScoped(
   lineId: string,
   scope: Scope,

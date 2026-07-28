@@ -6,39 +6,35 @@ import { getHouseholdIdOrThrow } from "@/lib/household";
 const DEFAULT_CATEGORIES = [
   ["Salary", "Income", "income", false],
   ["Benefits", "Income", "income", false],
-  ["Refunds", "Income", "income", false],
   ["Other income", "Income", "income", false],
-  ["Home", "Essentials"],
-  ["Groceries", "Essentials"],
+  ["Home & bills", "Essentials"],
+  ["Food & groceries", "Essentials"],
   ["Transport", "Essentials"],
-  ["Childcare", "Family"],
-  ["Kids & activities", "Family"],
-  ["Eating out", "Lifestyle"],
-  ["Shopping", "Lifestyle"],
-  ["Subscriptions", "Lifestyle"],
-  ["Health", "Essentials"],
-  ["Debt payments", "Financial"],
-  ["Savings", "Financial"],
+  ["Children & family", "Family"],
+  ["Personal & lifestyle", "Lifestyle"],
+  ["Debt repayments", "Debt"],
   ["Other", "Other"],
 ] as const;
 
 const BANK_CATEGORY_ALIASES: Record<string, string> = {
-  BILLS_AND_SERVICES: "Home",
+  BILLS_AND_SERVICES: "Home & bills",
   CASH: "Other",
   CASH_WITHDRAWAL: "Other",
-  CHILDCARE: "Childcare",
-  EATING_OUT: "Eating out",
-  ENTERTAINMENT: "Kids & activities",
-  FOOD_AND_DRINK: "Groceries",
+  CHILDCARE: "Children & family",
+  EATING_OUT: "Personal & lifestyle",
+  ENTERTAINMENT: "Personal & lifestyle",
+  FOOD_AND_DRINK: "Food & groceries",
   GENERAL: "Other",
-  GROCERIES: "Groceries",
-  HEALTH: "Health",
+  GROCERIES: "Food & groceries",
+  HEALTH: "Personal & lifestyle",
   INCOME: "Other income",
   PAYMENTS: "Other",
   SALARY: "Salary",
-  SHOPPING: "Shopping",
+  SHOPPING: "Personal & lifestyle",
   TRANSPORT: "Transport",
 };
+
+const isDebtLabel = (value: string) => /\b(credit\s*card|loan)\b/i.test(value);
 
 const monthBounds = (year: number, month: number) => ({
   gte: new Date(Date.UTC(year, month - 1, 1)),
@@ -215,9 +211,32 @@ export async function importStatementRows(rows: Array<{
     const rule = rules.find((item) => normalized.includes(item.matchText));
     const bankCategory = row.bankCategory?.trim().toUpperCase().replace(/[\s-]+/g, "_") || "";
     const mappedName = BANK_CATEGORY_ALIASES[bankCategory];
-    const mappedCategory = mappedName
+    const debtLabel = isDebtLabel(description);
+    const mappedCategory = debtLabel
+      ? categories.find((item) => item.name === "Debt repayments" && item.flow === "expense")
+      : mappedName
       ? categories.find((item) => item.name === mappedName && item.flow === flow)
       : undefined;
+    if (flow === "expense" && debtLabel) {
+      const debtName = description.split("—")[0].trim();
+      const existingDebt = await prisma.debt.findFirst({
+        where: { householdId, name: { equals: debtName, mode: "insensitive" } },
+      });
+      if (!existingDebt) {
+        await prisma.debt.create({
+          data: {
+            householdId,
+            name: debtName,
+            minimumPence: Math.abs(amountPence),
+          },
+        });
+      } else if (existingDebt.minimumPence === 0) {
+        await prisma.debt.update({
+          where: { id: existingDebt.id },
+          data: { minimumPence: Math.abs(amountPence) },
+        });
+      }
+    }
     await prisma.transaction.create({
       data: {
         householdId,

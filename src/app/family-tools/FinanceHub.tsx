@@ -2,9 +2,7 @@
 
 import React from "react";
 import {
-  ArrowDownRight,
   ArrowRight,
-  ArrowUpRight,
   Banknote,
   CalendarDays,
   Check,
@@ -18,24 +16,20 @@ import {
   Plus,
   RefreshCw,
   Sparkles,
-  Target,
   Trash2,
-  TrendingUp,
   WalletCards,
 } from "lucide-react";
 import ModernMonthlyPlan from "./ModernMonthlyPlan";
 import { fetchBudgetRowsForMonth } from "@/app/app/budget/actions";
-import { fetchPotPlans, fetchPots } from "@/app/app/budget/pots-actions";
 import {
   fetchFreedomData,
   removeDebt,
-  removeGoal,
   saveDebt,
   saveFinancialProfile,
   saveGoal,
 } from "@/app/app/budget/freedom-actions";
 
-type View = "overview" | "plan" | "debt" | "goals";
+type View = "overview" | "plan" | "debt" | "savings";
 type Strategy = "avalanche" | "snowball";
 type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
 type Goal = { id: string; name: string; target: number; saved: number; monthly: number; targetDate: string };
@@ -115,8 +109,6 @@ export default function FinanceHub() {
   const [message, setMessage] = React.useState("");
   const [income, setIncome] = React.useState(0);
   const [expenses, setExpenses] = React.useState(0);
-  const [monthlySavings, setMonthlySavings] = React.useState(0);
-  const [potsTotal, setPotsTotal] = React.useState(0);
   const [debts, setDebts] = React.useState<Debt[]>([]);
   const [goals, setGoals] = React.useState<Goal[]>([]);
   const [profile, setProfile] = React.useState<Profile>({
@@ -130,18 +122,12 @@ export default function FinanceHub() {
     quiet ? setRefreshing(true) : setLoading(true);
     const now = new Date();
     try {
-      const [budget, pots, potPlans, freedom] = await Promise.all([
+      const [budget, freedom] = await Promise.all([
         fetchBudgetRowsForMonth(now.getFullYear(), now.getMonth() + 1),
-        fetchPots(),
-        fetchPotPlans(now.getFullYear()),
         fetchFreedomData(),
       ]);
       setIncome(budget.incomes.reduce((sum, row) => sum + row.amount, 0));
       setExpenses(budget.expenses.reduce((sum, row) => sum + row.amount, 0));
-      setPotsTotal(pots.reduce((sum, pot) => sum + pot.balancePence / 100, 0));
-      setMonthlySavings(
-        pots.reduce((sum, pot) => sum + ((potPlans.byPot[pot.id]?.[now.getMonth() + 1] ?? 0) as number), 0)
-      );
       setDebts(freedom.debts);
       setGoals(freedom.goals);
       setProfile(freedom.profile);
@@ -158,15 +144,20 @@ export default function FinanceHub() {
   }, [load]);
 
   const debtTotal = debts.reduce((sum, debt) => sum + debt.balance, 0);
-  const goalSaved = goals.reduce((sum, goal) => sum + goal.saved, 0);
-  const goalMonthly = goals.reduce((sum, goal) => sum + goal.monthly, 0);
-  const available = income - expenses - monthlySavings;
-  const savingsRate = income > 0 ? ((monthlySavings + Math.max(0, available)) / income) * 100 : 0;
-  const freedomBase = Math.max(0, potsTotal + goalSaved - debtTotal);
-  const freedomPercent = profile.fireTarget > 0 ? Math.min(100, (freedomBase / profile.fireTarget) * 100) : 0;
+  const debtMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
+  const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
+  const emergencySaved = emergencyGoal?.saved || 0;
+  const extraAfterCommitments = Math.max(0, income - expenses - debtMinimums);
+  const starterEmergencyTarget = expenses + debtMinimums;
+  const fullEmergencyTarget = starterEmergencyTarget * Math.max(1, profile.emergencyFundMonths);
+  const suggestedSavings = emergencySaved < starterEmergencyTarget
+    ? Math.min(starterEmergencyTarget - emergencySaved, debtTotal > 0 ? extraAfterCommitments / 2 : extraAfterCommitments)
+    : debtTotal === 0 ? extraAfterCommitments : 0;
+  const suggestedDebtExtra = debtTotal > 0 ? Math.max(0, extraAfterCommitments - suggestedSavings) : 0;
+  const shortfall = Math.max(0, expenses + debtMinimums - income);
   const payoff = React.useMemo(
-    () => calculatePayoff(debts, profile.strategy, profile.extraPayment),
-    [debts, profile.strategy, profile.extraPayment]
+    () => calculatePayoff(debts, profile.strategy, suggestedDebtExtra),
+    [debts, profile.strategy, suggestedDebtExtra]
   );
 
   async function updateProfile(patch: Partial<Profile>) {
@@ -215,8 +206,8 @@ export default function FinanceHub() {
       <header className="finance-hero">
         <div>
           <div className="finance-eyebrow"><Sparkles size={14} /> Family money plan</div>
-          <h1>Your path to financial freedom</h1>
-          <p>One shared view of today’s cash, every debt, and the future you’re building together.</p>
+          <h1>Know what to pay, save and clear</h1>
+          <p>A simple shared plan for income, commitments, emergency savings and becoming debt free.</p>
         </div>
         <button className="soft-button" onClick={() => load(true)} disabled={refreshing}>
           <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
@@ -234,22 +225,21 @@ export default function FinanceHub() {
         <FinanceNavItem active={view === "overview"} onClick={() => setView("overview")} icon={<Gauge />} label="Overview" />
         <FinanceNavItem active={view === "plan"} onClick={() => setView("plan")} icon={<WalletCards />} label="Monthly plan" />
         <FinanceNavItem active={view === "debt"} onClick={() => setView("debt")} icon={<CreditCard />} label="Debt freedom" />
-        <FinanceNavItem active={view === "goals"} onClick={() => setView("goals")} icon={<Target />} label="Goals & future" />
+        <FinanceNavItem active={view === "savings"} onClick={() => setView("savings")} icon={<PiggyBank />} label="Emergency savings" />
       </nav>
 
       {view === "overview" && (
         <Overview
           income={income}
           expenses={expenses}
-          monthlySavings={monthlySavings}
-          available={available}
-          savingsRate={savingsRate}
+          debtMinimums={debtMinimums}
+          suggestedSavings={suggestedSavings}
+          suggestedDebtExtra={suggestedDebtExtra}
+          shortfall={shortfall}
+          emergencySaved={emergencySaved}
+          starterEmergencyTarget={starterEmergencyTarget}
           debtTotal={debtTotal}
           payoffMonths={payoff.months}
-          goalMonthly={goalMonthly}
-          freedomPercent={freedomPercent}
-          freedomBase={freedomBase}
-          fireTarget={profile.fireTarget}
           onNavigate={setView}
         />
       )}
@@ -260,6 +250,7 @@ export default function FinanceHub() {
           goals={goals}
           strategy={profile.strategy}
           emergencyFundMonths={profile.emergencyFundMonths}
+          onFinanceChanged={() => load(true)}
         />
       )}
 
@@ -271,6 +262,7 @@ export default function FinanceHub() {
           updateProfile={updateProfile}
           persistDebt={persistDebt}
           payoff={payoff}
+          suggestedExtra={suggestedDebtExtra}
           onRemove={async (id) => {
             setDebts((items) => items.filter((item) => item.id !== id));
             if (!id.startsWith("new-")) await removeDebt(id);
@@ -278,18 +270,15 @@ export default function FinanceHub() {
         />
       )}
 
-      {view === "goals" && (
-        <Goals
-          goals={goals}
-          setGoals={setGoals}
+      {view === "savings" && (
+        <EmergencySavings
+          goal={emergencyGoal}
           profile={profile}
           updateProfile={updateProfile}
           persistGoal={persistGoal}
-          freedomBase={freedomBase}
-          onRemove={async (id) => {
-            setGoals((items) => items.filter((item) => item.id !== id));
-            if (!id.startsWith("new-")) await removeGoal(id);
-          }}
+          target={fullEmergencyTarget}
+          starterTarget={starterEmergencyTarget}
+          suggestedMonthly={suggestedSavings}
         />
       )}
     </div>
@@ -305,15 +294,28 @@ function FinanceNavItem({ active, onClick, icon, label }: { active: boolean; onC
 }
 
 function Overview(props: {
-  income: number; expenses: number; monthlySavings: number; available: number; savingsRate: number;
-  debtTotal: number; payoffMonths: number; goalMonthly: number; freedomPercent: number;
-  freedomBase: number; fireTarget: number; onNavigate: (view: View) => void;
+  income: number;
+  expenses: number;
+  debtMinimums: number;
+  suggestedSavings: number;
+  suggestedDebtExtra: number;
+  shortfall: number;
+  emergencySaved: number;
+  starterEmergencyTarget: number;
+  debtTotal: number;
+  payoffMonths: number;
+  onNavigate: (view: View) => void;
 }) {
   const {
-    income, expenses, monthlySavings, available, savingsRate, debtTotal, payoffMonths,
-    goalMonthly, freedomPercent, freedomBase, fireTarget, onNavigate,
+    income, expenses, debtMinimums, suggestedSavings, suggestedDebtExtra, shortfall,
+    emergencySaved, starterEmergencyTarget, debtTotal, payoffMonths, onNavigate,
   } = props;
-  const budgetHealth = income <= 0 ? "Add your income to get started" : available >= 0 ? "Your plan is in the green" : "Your plan needs attention";
+  const budgetHealth = income <= 0
+    ? "Add your income to get started"
+    : shortfall > 0
+      ? "Your commitments are above income"
+      : "Every extra pound has a job";
+  const extra = suggestedSavings + suggestedDebtExtra;
 
   return (
     <div className="finance-overview">
@@ -323,66 +325,67 @@ function Overview(props: {
           <h2>{budgetHealth}</h2>
           <p>
             {income <= 0
-              ? "Start with your take-home pay, then work through essentials, debt and the future."
-              : available >= 0
-                ? `${money(available)} remains after planned costs and savings. Decide where it can make the biggest difference.`
-                : `Planned outgoings are ${money(Math.abs(available))} above income. A few changes now protect your bigger goals.`}
+              ? "Enter both take-home pays, then add the bills and debt minimums you must cover."
+              : shortfall > 0
+                ? `You are ${money(shortfall)} short before savings or debt overpayments. Check the monthly plan first.`
+                : `${money(extra)} remains after commitments. HearthPlan assigns it to emergency savings and debt below.`}
           </p>
           <button className="primary-button" onClick={() => onNavigate("plan")}>
             Review this month <ArrowRight size={17} />
           </button>
         </div>
-        <div className="freedom-ring" style={{ "--progress": `${freedomPercent * 3.6}deg` } as React.CSSProperties}>
-          <div>
-            <strong>{Math.round(freedomPercent)}%</strong>
-            <span>of freedom target</span>
-          </div>
+        <div className="overview-allocation">
+          <span><small>Expected income</small><strong>{money(income)}</strong></span>
+          <span><small>Bills + debt minimums</small><strong>{money(expenses + debtMinimums)}</strong></span>
+          <span><small>Left to assign</small><strong>{money(extra)}</strong></span>
         </div>
       </section>
 
       <section className="stat-grid">
-        <MetricCard icon={<Banknote />} tone="mint" label="Monthly income" value={money(income)} note="Take-home household income" trend="up" />
-        <MetricCard icon={<ArrowDownRight />} tone="sand" label="Planned spending" value={money(expenses)} note={`${income > 0 ? Math.round((expenses / income) * 100) : 0}% of household income`} />
-        <MetricCard icon={<PiggyBank />} tone="blue" label="Future you" value={money(monthlySavings + goalMonthly)} note="Monthly pots and goal contributions" trend="up" />
-        <MetricCard icon={<TrendingUp />} tone="lavender" label="Savings rate" value={`${Math.max(0, savingsRate).toFixed(1)}%`} note="Target 20%+ for momentum" trend="up" />
+        <MetricCard icon={<Banknote />} tone="mint" label="Expected income" value={money(income)} note="Both take-home pays" />
+        <MetricCard icon={<CalendarDays />} tone="sand" label="Commitments" value={money(expenses + debtMinimums)} note={`${money(expenses)} bills · ${money(debtMinimums)} debt minimums`} />
+        <MetricCard icon={<PiggyBank />} tone="blue" label="Save this month" value={money(suggestedSavings)} note={`${money(emergencySaved)} currently in your emergency fund`} />
+        <MetricCard icon={<CreditCard />} tone="lavender" label="Debt overpayment" value={money(suggestedDebtExtra)} note={debtTotal > 0 ? `${money(debtTotal)} total debt remaining` : "No debt balance entered"} />
       </section>
 
       <section className="overview-grid">
         <article className="finance-panel action-panel">
           <div className="panel-title-row">
-            <div><span className="section-kicker">Next best moves</span><h3>This month’s focus</h3></div>
+            <div><span className="section-kicker">Three steps</span><h3>Complete this month in order</h3></div>
             <Flag size={20} />
           </div>
           <ActionRow
-            done={income > 0 && expenses > 0}
-            title="Complete your monthly plan"
-            detail={income > 0 && expenses > 0 ? "Income and spending are mapped." : "Add income and essential costs to reveal your true surplus."}
+            done={income > 0 && (expenses > 0 || debtMinimums > 0)}
+            title="Confirm income and commitments"
+            detail={income > 0 && (expenses > 0 || debtMinimums > 0) ? "Your starting numbers are in place." : "Add both pays and every must-pay bill."}
             onClick={() => onNavigate("plan")}
           />
           <ActionRow
             done={debtTotal === 0}
-            title={debtTotal > 0 ? "Aim your debt overpayment" : "You’re debt free"}
-            detail={debtTotal > 0 ? `${money(debtTotal)} remaining · projected ${formatMonths(payoffMonths)}` : "Keep the momentum going towards your future goals."}
+            title={debtTotal > 0 ? "Check the priority debt" : "Add your debt balances"}
+            detail={debtTotal > 0 ? `${money(suggestedDebtExtra)} extra this month · projected ${formatMonths(payoffMonths)}` : "Add balances, minimums and APR where known."}
             onClick={() => onNavigate("debt")}
           />
           <ActionRow
-            done={fireTarget > 0}
-            title="Define your freedom number"
-            detail={fireTarget > 0 ? `${money(freedomBase, true)} of ${money(fireTarget, true)} built.` : "Set the long-term number you’re working towards together."}
-            onClick={() => onNavigate("goals")}
+            done={starterEmergencyTarget > 0 && emergencySaved >= starterEmergencyTarget}
+            title="Keep a monthly safety contribution"
+            detail={starterEmergencyTarget > 0 ? `${money(emergencySaved)} of ${money(starterEmergencyTarget)} starter buffer saved.` : "Your starter target appears once commitments are entered."}
+            onClick={() => onNavigate("savings")}
           />
         </article>
 
         <article className="finance-panel cashflow-panel">
           <div className="panel-title-row">
-            <div><span className="section-kicker">Cash flow</span><h3>Where this month goes</h3></div>
+            <div><span className="section-kicker">Zero left unassigned</span><h3>Where this month goes</h3></div>
             <CalendarDays size={20} />
           </div>
           <FlowRow label="Income" value={income} total={income || 1} color="var(--money-mint)" />
-          <FlowRow label="Household costs" value={expenses} total={income || Math.max(expenses, 1)} color="var(--money-coral)" />
-          <FlowRow label="Savings & pots" value={monthlySavings} total={income || Math.max(monthlySavings, 1)} color="var(--money-blue)" />
-          <div className={`cashflow-balance ${available < 0 ? "negative" : ""}`}>
-            <span>Left to decide</span><strong>{money(available)}</strong>
+          <FlowRow label="Regular commitments" value={expenses} total={income || Math.max(expenses, 1)} color="var(--money-coral)" />
+          <FlowRow label="Debt minimums" value={debtMinimums} total={income || Math.max(debtMinimums, 1)} color="#b98a72" />
+          <FlowRow label="Emergency savings" value={suggestedSavings} total={income || Math.max(suggestedSavings, 1)} color="var(--money-blue)" />
+          <FlowRow label="Extra debt payment" value={suggestedDebtExtra} total={income || Math.max(suggestedDebtExtra, 1)} color="#836ca7" />
+          <div className={`cashflow-balance ${shortfall > 0 ? "negative" : ""}`}>
+            <span>{shortfall > 0 ? "Plan shortfall" : "Unassigned"}</span><strong>{money(shortfall)}</strong>
           </div>
         </article>
       </section>
@@ -390,15 +393,15 @@ function Overview(props: {
   );
 }
 
-function MetricCard({ icon, tone, label, value, note, trend }: {
-  icon: React.ReactNode; tone: string; label: string; value: string; note: string; trend?: "up";
+function MetricCard({ icon, tone, label, value, note }: {
+  icon: React.ReactNode; tone: string; label: string; value: string; note: string;
 }) {
   return (
     <article className={`metric-card ${tone}`}>
       <div className="metric-icon">{icon}</div>
       <span>{label}</span>
       <strong>{value}</strong>
-      <small>{trend && <ArrowUpRight size={13} />} {note}</small>
+      <small>{note}</small>
     </article>
   );
 }
@@ -423,10 +426,10 @@ function FlowRow({ label, value, total, color }: { label: string; value: number;
   );
 }
 
-function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, payoff, onRemove }: {
+function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, payoff, suggestedExtra, onRemove }: {
   debts: Debt[]; setDebts: React.Dispatch<React.SetStateAction<Debt[]>>; profile: Profile;
   updateProfile: (patch: Partial<Profile>) => Promise<void>; persistDebt: (debt: Debt) => Promise<void>;
-  payoff: ReturnType<typeof calculatePayoff>; onRemove: (id: string) => Promise<void>;
+  payoff: ReturnType<typeof calculatePayoff>; suggestedExtra: number; onRemove: (id: string) => Promise<void>;
 }) {
   const total = debts.reduce((sum, debt) => sum + debt.balance, 0);
   const update = (id: string, patch: Partial<Debt>) =>
@@ -436,7 +439,7 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, pay
     <div className="debt-layout">
       <section className="finance-panel debt-summary">
         <div className="section-heading">
-          <div><span className="section-kicker">Your exit plan</span><h2>Turn debt into a finish line</h2><p>Choose a strategy, add what you can, and see the date move closer.</p></div>
+          <div><span className="section-kicker">Your exit plan</span><h2>Pay one debt down with purpose</h2><p>Enter each balance, minimum and APR. The monthly plan supplies the affordable extra payment automatically.</p></div>
         </div>
         <div className="debt-kpis">
           <div><span>Total remaining</span><strong>{money(total)}</strong></div>
@@ -453,23 +456,20 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, pay
             </div>
             <p>{profile.strategy === "avalanche" ? "Highest APR first — usually saves the most interest." : "Smallest balance first — creates faster psychological wins."}</p>
           </div>
-          <label className="money-field">
-            <span>Extra monthly payment</span>
-            <div><b>£</b><input type="number" min="0" step="10" value={profile.extraPayment} onChange={(e) => setTimeout(() => updateProfile({ extraPayment: number(e.target.value) }), 0)} /></div>
-          </label>
+          <div className="recommended-extra"><span>From this month&apos;s plan</span><strong>{money(suggestedExtra)}</strong><small>extra after commitments and emergency saving</small></div>
         </div>
       </section>
 
       <section className="finance-panel">
         <div className="panel-title-row">
-          <div><span className="section-kicker">Household debts</span><h3>Everything in one place</h3></div>
+          <div><span className="section-kicker">Household debts</span><h3>Add balances and APRs when known</h3></div>
           <button className="soft-button" onClick={() => setDebts((items) => [...items, { id: `new-${Date.now()}`, name: "New debt", balance: 0, apr: 0, minimum: 0 }])}><Plus size={16} /> Add debt</button>
         </div>
         {debts.length === 0 ? (
           <EmptyState icon={<Landmark />} title="No debts added" text="If you’re already debt free, brilliant. Otherwise add each balance to build your plan." />
         ) : (
           <div className="debt-list">
-            {debts.map((debt, index) => (
+            {[...debts].sort((a, b) => profile.strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance).map((debt, index) => (
               <article className="editable-row" key={debt.id}>
                 <div className="row-order">{index + 1}</div>
                 <label><span>Name</span><input value={debt.name} onChange={(e) => update(debt.id, { name: e.target.value })} onBlur={() => persistDebt(debt)} /></label>
@@ -486,65 +486,58 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, pay
   );
 }
 
-function Goals({ goals, setGoals, profile, updateProfile, persistGoal, freedomBase, onRemove }: {
-  goals: Goal[]; setGoals: React.Dispatch<React.SetStateAction<Goal[]>>; profile: Profile;
-  updateProfile: (patch: Partial<Profile>) => Promise<void>; persistGoal: (goal: Goal) => Promise<void>;
-  freedomBase: number; onRemove: (id: string) => Promise<void>;
+function EmergencySavings({ goal, profile, updateProfile, persistGoal, target, starterTarget, suggestedMonthly }: {
+  goal?: Goal;
+  profile: Profile;
+  updateProfile: (patch: Partial<Profile>) => Promise<void>;
+  persistGoal: (goal: Goal) => Promise<void>;
+  target: number;
+  starterTarget: number;
+  suggestedMonthly: number;
 }) {
-  const update = (id: string, patch: Partial<Goal>) =>
-    setGoals((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
-  const percent = profile.fireTarget > 0 ? Math.min(100, (freedomBase / profile.fireTarget) * 100) : 0;
+  const [saved, setSaved] = React.useState(goal?.saved || 0);
+  React.useEffect(() => setSaved(goal?.saved || 0), [goal?.saved]);
+  const starterPercent = starterTarget > 0 ? Math.min(100, (saved / starterTarget) * 100) : 0;
+  const fullPercent = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
+
+  async function persistSaved() {
+    if (!goal) return;
+    await persistGoal({ ...goal, saved, target, monthly: suggestedMonthly });
+  }
 
   return (
-    <div className="goals-layout">
-      <section className="finance-panel freedom-target-panel">
-        <div>
-          <span className="section-kicker">The big picture</span>
-          <h2>Name your freedom number</h2>
-          <p>This is the invested wealth or capital you want to build towards. It turns “one day” into a measurable destination.</p>
+    <div className="savings-layout">
+      <section className="finance-panel emergency-panel">
+        <div className="section-heading">
+          <div><span className="section-kicker">Your safety net</span><h2>Save something every month</h2><p>The first milestone is one month of commitments. Until then, HearthPlan splits your extra money equally between this fund and your priority debt.</p></div>
         </div>
-        <div className="target-input-row">
-          <MoneyInput label="Financial independence target" value={profile.fireTarget} onChange={(fireTarget) => setProfileSoon(updateProfile, { fireTarget })} onBlur={() => undefined} />
-          <label><span>Emergency fund</span><div className="suffix-input"><input type="number" min="1" max="12" value={profile.emergencyFundMonths} onChange={(e) => updateProfile({ emergencyFundMonths: number(e.target.value) })} /><b>months</b></div></label>
+        <div className="emergency-kpis">
+          <div><span>Saved now</span><strong>{money(saved)}</strong></div>
+          <div><span>Save this month</span><strong>{money(suggestedMonthly)}</strong></div>
+          <div><span>Starter buffer</span><strong>{money(starterTarget)}</strong></div>
+          <div><span>Full target</span><strong>{money(target)}</strong></div>
         </div>
-        <div className="target-progress">
-          <div><span style={{ width: `${percent}%` }} /></div>
-          <p><strong>{money(freedomBase, true)}</strong> built · <strong>{Math.round(percent)}%</strong> of {money(profile.fireTarget, true) || "your target"}</p>
+        <div className="emergency-progress-block">
+          <div className="panel-title-row"><span>One-month starter buffer</span><strong>{Math.round(starterPercent)}%</strong></div>
+          <div className="goal-progress"><span style={{ width: `${starterPercent}%` }} /></div>
+          <small>{money(Math.max(0, starterTarget - saved))} left to reach the first safety milestone.</small>
+        </div>
+        <div className="emergency-fields">
+          <MoneyInput label="Emergency savings balance" value={saved} onChange={setSaved} onBlur={persistSaved} />
+          <label><span>Longer-term target</span><div className="suffix-input"><input type="number" min="1" max="6" value={profile.emergencyFundMonths} onChange={(event) => updateProfile({ emergencyFundMonths: number(event.target.value) })} /><b>months</b></div></label>
         </div>
       </section>
 
-      <section className="finance-panel">
-        <div className="panel-title-row">
-          <div><span className="section-kicker">Nearer horizons</span><h3>Family goals</h3></div>
-          <button className="soft-button" onClick={() => setGoals((items) => [...items, { id: `new-${Date.now()}`, name: "New goal", target: 0, saved: 0, monthly: 0, targetDate: "" }])}><Plus size={16} /> Add goal</button>
-        </div>
-        {goals.length === 0 ? (
-          <EmptyState icon={<Target />} title="Create your first shared goal" text="Emergency fund, family holiday, home improvements or investing — give the future a name." />
-        ) : (
-          <div className="goal-grid">
-            {goals.map((goal) => {
-              const goalPercent = goal.target > 0 ? Math.min(100, (goal.saved / goal.target) * 100) : 0;
-              const months = goal.monthly > 0 ? Math.ceil(Math.max(0, goal.target - goal.saved) / goal.monthly) : 0;
-              return (
-                <article className="goal-card" key={goal.id}>
-                  <div className="goal-card-head">
-                    <input className="goal-name" value={goal.name} onChange={(e) => update(goal.id, { name: e.target.value })} onBlur={() => persistGoal(goal)} />
-                    <button className="icon-button danger" onClick={() => onRemove(goal.id)} aria-label={`Remove ${goal.name}`}><Trash2 size={15} /></button>
-                  </div>
-                  <div className="goal-progress"><span style={{ width: `${goalPercent}%` }} /></div>
-                  <div className="goal-numbers"><strong>{money(goal.saved)}</strong><span>of {money(goal.target)}</span></div>
-                  <div className="goal-fields">
-                    <MoneyInput label="Saved" value={goal.saved} onChange={(saved) => update(goal.id, { saved })} onBlur={() => persistGoal(goal)} />
-                    <MoneyInput label="Target" value={goal.target} onChange={(target) => update(goal.id, { target })} onBlur={() => persistGoal(goal)} />
-                    <MoneyInput label="Per month" value={goal.monthly} onChange={(monthly) => update(goal.id, { monthly })} onBlur={() => persistGoal(goal)} />
-                    <label><span>Target date</span><input type="date" value={goal.targetDate} onChange={(e) => update(goal.id, { targetDate: e.target.value })} onBlur={() => persistGoal(goal)} /></label>
-                  </div>
-                  <small>{months > 0 ? `At this pace: ${formatMonths(months)}` : "Add a monthly amount to forecast this goal."}</small>
-                </article>
-              );
-            })}
-          </div>
-        )}
+      <section className="finance-panel emergency-explainer">
+        <PiggyBank />
+        <div><span className="section-kicker">Simple rule</span><h3>Buffer first, without pausing debt progress</h3></div>
+        <ol>
+          <li><b>Cover commitments</b><span>Mortgage, bills and every debt minimum are protected first.</span></li>
+          <li><b>Build one month of safety</b><span>Half of the extra goes here and half attacks the priority debt.</span></li>
+          <li><b>Accelerate debt</b><span>After the starter buffer, all extra goes to debt until it is cleared.</span></li>
+          <li><b>Finish the full buffer</b><span>Once debt is gone, the whole surplus builds towards {profile.emergencyFundMonths} months.</span></li>
+        </ol>
+        <div className="target-progress"><div><span style={{ width: `${fullPercent}%` }} /></div><p>{Math.round(fullPercent)}% of the full emergency target saved</p></div>
       </section>
     </div>
   );
@@ -570,8 +563,4 @@ function formatMonths(months: number) {
   const remainder = months % 12;
   if (!years) return `${months} month${months === 1 ? "" : "s"}`;
   return `${years}y${remainder ? ` ${remainder}m` : ""}`;
-}
-
-function setProfileSoon(update: (patch: Partial<Profile>) => Promise<void>, patch: Partial<Profile>) {
-  void update(patch);
 }

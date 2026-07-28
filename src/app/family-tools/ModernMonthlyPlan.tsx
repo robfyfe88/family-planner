@@ -10,9 +10,9 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  CreditCard,
   FileUp,
   Filter,
-  Landmark,
   Loader2,
   Plus,
   RefreshCw,
@@ -26,7 +26,9 @@ import {
   X,
 } from "lucide-react";
 import {
+  deleteBudgetRowScoped,
   fetchBudgetRowsForMonth,
+  saveCommitment,
   upsertBudgetRowScoped,
   type Row as BudgetRow,
   type Scope,
@@ -53,6 +55,7 @@ type ModernMonthlyPlanProps = {
   goals?: Goal[];
   strategy?: "avalanche" | "snowball";
   emergencyFundMonths?: number;
+  onFinanceChanged?: () => void;
 };
 
 const money = (value: number, digits = 2) =>
@@ -124,6 +127,7 @@ export default function ModernMonthlyPlan({
   goals = [],
   strategy = "avalanche",
   emergencyFundMonths = 3,
+  onFinanceChanged,
 }: ModernMonthlyPlanProps) {
   const now = new Date();
   const [cursor, setCursor] = React.useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
@@ -132,13 +136,13 @@ export default function ModernMonthlyPlan({
   const [plannedIncome, setPlannedIncome] = React.useState(0);
   const [plannedExpenses, setPlannedExpenses] = React.useState(0);
   const [incomeRows, setIncomeRows] = React.useState<BudgetRow[]>([]);
-  const [committedBills, setCommittedBills] = React.useState<Array<{ id?: string; label: string; amount: number }>>([]);
+  const [committedBills, setCommittedBills] = React.useState<BudgetRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] = React.useState("all");
   const [reviewOnly, setReviewOnly] = React.useState(false);
-  const [modal, setModal] = React.useState<"add" | "income" | "import" | "bank" | null>(null);
+  const [modal, setModal] = React.useState<"add" | "income" | "commitment" | "import" | null>(null);
   const [toast, setToast] = React.useState("");
 
   const load = React.useCallback(async (quiet = false) => {
@@ -251,6 +255,33 @@ export default function ModernMonthlyPlan({
     if (learn) setToast(`Categorised as ${category?.name}. Future matches will follow this rule.`);
   }
 
+  function updateCommitment(id: string | undefined, patch: Partial<BudgetRow>) {
+    setCommittedBills((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+  }
+
+  async function persistCommitment(row: BudgetRow) {
+    if (!row.id || row.id.startsWith("activity:")) return;
+    const result = await saveCommitment({
+      id: row.id,
+      label: row.label,
+      amount: row.amount,
+      owner: row.owner,
+      year: cursor.year,
+      month1to12: cursor.month,
+      scope: "from-now-on",
+      expectedDay: row.expectedDay,
+    });
+    if (result.kind === "debt") {
+      await deleteBudgetRowScoped(row.id, "entire-range", cursor.year, cursor.month);
+      setCommittedBills((items) => items.filter((item) => item.id !== row.id));
+      onFinanceChanged?.();
+      setToast(`${row.label} moved to Debt freedom.`);
+    } else {
+      onFinanceChanged?.();
+      setToast(`${row.label} updated.`);
+    }
+  }
+
   return (
     <section className="money-workspace">
       {toast && <div className="workspace-toast"><Check size={15} /> {toast}</div>}
@@ -264,7 +295,7 @@ export default function ModernMonthlyPlan({
         <div className="workspace-actions">
           <button className="soft-button" onClick={() => setModal("income")}><ArrowDownLeft size={16} /> Add income</button>
           <button className="soft-button" onClick={() => setModal("import")}><FileUp size={16} /> Import statement</button>
-          <button className="primary-button workspace-primary" onClick={() => setModal("bank")}><Landmark size={16} /> Connect bank</button>
+          <button className="primary-button workspace-primary" onClick={() => setModal("commitment")}><Plus size={16} /> Add commitment</button>
         </div>
       </header>
 
@@ -325,7 +356,7 @@ export default function ModernMonthlyPlan({
             <WorkspaceEmpty
               icon={<Building2 />}
               title={data.transactions.length ? "Nothing matches those filters" : "Bring in your first transactions"}
-              text={data.transactions.length ? "Try clearing your search or category filters." : "Connect a bank, import a CSV statement, or add a transaction manually."}
+              text={data.transactions.length ? "Try clearing your search or category filters." : "Import a CSV statement or add a transaction manually."}
               actions={<><button className="primary-button" onClick={() => setModal("import")}><FileUp size={15} /> Import statement</button><button className="soft-button" onClick={() => setModal("add")}><Plus size={15} /> Add manually</button></>}
             />
           ) : (
@@ -418,12 +449,31 @@ export default function ModernMonthlyPlan({
               <div className="order-heading">
                 <span className="section-kicker">Cover commitments</span>
                 <h3>{money(plannedExpenses + debtMinimums)}</h3>
-                <p>Regular bills and minimum debt payments that must be covered.</p>
+                <p>Regular bills plus the minimum payments from Debt freedom.</p>
               </div>
-              <div className="order-lines">
-                {committedBills.slice(0, 6).map((bill) => <span key={bill.id || bill.label}><b>{bill.label}</b><em>{money(bill.amount)}</em></span>)}
-                {debtMinimums > 0 && <span><b>Debt minimum payments</b><em>{money(debtMinimums)}</em></span>}
-                {committedBills.length === 0 && debtMinimums === 0 && <small>Add regular costs in your budget or list each debt under Debt freedom.</small>}
+              <button className="soft-button" onClick={() => setModal("commitment")}><Plus size={15} /> Add commitment</button>
+              <div className="commitment-editor">
+                {committedBills.map((bill) => bill.id?.startsWith("activity:") ? (
+                  <article className="commitment-static" key={bill.id}>
+                    <span><b>{bill.label}</b><small>From family activities</small></span>
+                    <strong>{money(bill.amount)}</strong>
+                  </article>
+                ) : (
+                  <article key={bill.id || bill.label}>
+                    <label><span>Commitment</span><input value={bill.label} onChange={(event) => updateCommitment(bill.id, { label: event.target.value })} onBlur={() => persistCommitment(bill)} /></label>
+                    <label><span>Monthly amount</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} onBlur={() => persistCommitment(bill)} /></div></label>
+                    <label><span>Due day</span><input type="number" min="1" max="31" value={bill.expectedDay || ""} placeholder="—" onChange={(event) => updateCommitment(bill.id, { expectedDay: event.target.value ? Number(event.target.value) : null })} onBlur={() => persistCommitment(bill)} /></label>
+                    <button className="icon-button danger" aria-label={`Remove ${bill.label}`} onClick={async () => {
+                      if (!bill.id) return;
+                      await deleteBudgetRowScoped(bill.id, "entire-range", cursor.year, cursor.month);
+                      setCommittedBills((items) => items.filter((item) => item.id !== bill.id));
+                      setPlannedExpenses((value) => Math.max(0, value - bill.amount));
+                      onFinanceChanged?.();
+                    }}><Trash2 size={15} /></button>
+                  </article>
+                ))}
+                {debtMinimums > 0 && <article className="commitment-static debt-total"><span><b>Debt minimum payments</b><small>Managed in Debt freedom</small></span><strong>{money(debtMinimums)}</strong></article>}
+                {committedBills.length === 0 && debtMinimums === 0 && <button className="empty-order-action" onClick={() => setModal("commitment")}>Add mortgage, council tax, utilities, childcare and other must-pay bills</button>}
               </div>
             </section>
 
@@ -467,9 +517,14 @@ export default function ModernMonthlyPlan({
       )}
 
       {modal === "add" && <AddTransactionModal categories={data.categories} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(true); setToast("Transaction added."); }} />}
-      {modal === "income" && <IncomeModal year={cursor.year} month={cursor.month} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(true); setToast("Income added to your monthly plan."); }} />}
-      {modal === "import" && <ImportModal onClose={() => setModal(null)} onImported={(message) => { setModal(null); load(true); setToast(message); }} />}
-      {modal === "bank" && <BankModal configured={data.bankLink.configured} onClose={() => setModal(null)} onImport={() => setModal("import")} />}
+      {modal === "income" && <IncomeModal year={cursor.year} month={cursor.month} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(true); onFinanceChanged?.(); setToast("Income added to your monthly plan."); }} />}
+      {modal === "commitment" && <CommitmentModal year={cursor.year} month={cursor.month} onClose={() => setModal(null)} onSaved={(kind) => {
+        setModal(null);
+        load(true);
+        onFinanceChanged?.();
+        setToast(kind === "debt" ? "Debt payment added to Debt freedom." : "Commitment added.");
+      }} />}
+      {modal === "import" && <ImportModal onClose={() => setModal(null)} onImported={(message) => { setModal(null); load(true); onFinanceChanged?.(); setToast(message); }} />}
     </section>
   );
 }
@@ -561,6 +616,43 @@ function IncomeModal({ year, month, onClose, onSaved }: { year: number; month: n
       <label><span>Usual payday</span><input type="number" min="1" max="31" placeholder="Day of month" value={expectedDay} onChange={(event) => setExpectedDay(event.target.value)} /></label>
       <label className="wide"><span>Use this amount</span><select value={scope} onChange={(event) => setScope(event.target.value as Scope)}><option value="from-now-on">{MONTHS[month - 1]} and future months</option><option value="this-month">Only {MONTHS[month - 1]}</option></select></label>
       <button className="primary-button wide" disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : <ArrowDownLeft size={16} />} Save income</button>
+    </form>
+  </ModalFrame>;
+}
+
+function CommitmentModal({ year, month, onClose, onSaved }: {
+  year: number;
+  month: number;
+  onClose: () => void;
+  onSaved: (kind: "commitment" | "debt") => void;
+}) {
+  const [label, setLabel] = React.useState("");
+  const [amount, setAmount] = React.useState("");
+  const [dueDay, setDueDay] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const debtLike = /\b(credit\s*card|loan)\b/i.test(label);
+
+  return <ModalFrame title="Add a monthly commitment" subtitle="Must-pay outgoings" onClose={onClose}>
+    <p className="modal-intro">Add fixed bills you need to cover before saving or making debt overpayments.</p>
+    {debtLike && <div className="debt-detection-note"><CreditCard size={16} /><span>This looks like debt. It will be added to Debt freedom as a minimum payment, where you can enter the balance and APR.</span></div>}
+    <form className="workspace-form" onSubmit={async (event) => {
+      event.preventDefault();
+      setSaving(true);
+      const result = await saveCommitment({
+        label,
+        amount: Number(amount) || 0,
+        owner: "joint",
+        year,
+        month1to12: month,
+        scope: "from-now-on",
+        expectedDay: dueDay ? Math.min(31, Math.max(1, Number(dueDay))) : null,
+      });
+      onSaved(result.kind);
+    }}>
+      <label className="wide"><span>Commitment name</span><input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. Mortgage, Council tax, Octopus Energy" /></label>
+      <label><span>Monthly amount</span><div className="currency-input">£<input type="number" required min="0.01" step=".01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div></label>
+      <label><span>Usual due day</span><input type="number" min="1" max="31" placeholder="Optional" value={dueDay} onChange={(event) => setDueDay(event.target.value)} /></label>
+      <button className="primary-button wide" disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : debtLike ? <CreditCard size={16} /> : <Plus size={16} />} {debtLike ? "Add to Debt freedom" : "Save commitment"}</button>
     </form>
   </ModalFrame>;
 }
@@ -684,26 +776,5 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
     <label className="modal-field"><span>Account name</span><input value={account} onChange={(event) => setAccount(event.target.value)} /></label>
     {error && <div className="modal-error"><CircleAlert size={15} /> {error}</div>}
     <button className="primary-button modal-submit" disabled={!file || busy} onClick={runImport}>{busy ? <Loader2 className="animate-spin" size={16} /> : <FileUp size={16} />} Import transactions</button>
-  </ModalFrame>;
-}
-
-function BankModal({ configured, onClose, onImport }: { configured: boolean; onClose: () => void; onImport: () => void }) {
-  return <ModalFrame title="Connect your bank securely" subtitle="UK Open Banking" onClose={onClose}>
-    <div className="bank-provider-card">
-      <div><Landmark /></div>
-      <span><strong>Bank connection via Plaid</strong><small>Read-only transaction access · your bank login is never stored by HearthPlan</small></span>
-      <b className={configured ? "ready" : ""}>{configured ? "Ready" : "Setup needed"}</b>
-    </div>
-    <div className="bank-steps">
-      <span><b>1</b><em>Choose your bank</em></span>
-      <span><b>2</b><em>Approve read-only access</em></span>
-      <span><b>3</b><em>Transactions categorise automatically</em></span>
-    </div>
-    {configured ? (
-      <div className="bank-notice"><Sparkles size={16} /><span>The provider credentials are present. The final consent callback and encrypted token vault are the remaining production steps.</span></div>
-    ) : (
-      <div className="bank-notice"><CircleAlert size={16} /><span>Bank linking needs a Plaid UK application and production credentials. Statement import gives you the same categorisation workflow today.</span></div>
-    )}
-    <button className="primary-button modal-submit" onClick={onImport}><FileUp size={16} /> Import a statement instead</button>
   </ModalFrame>;
 }
