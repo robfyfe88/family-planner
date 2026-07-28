@@ -66,6 +66,8 @@ const money = (value: number, digits = 2) =>
     maximumFractionDigits: digits,
   }).format(Number.isFinite(value) ? value : 0);
 
+const roundMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -185,11 +187,12 @@ export default function ModernMonthlyPlan({
   }
 
   const spending = data.transactions
-    .filter((item) => item.flow === "expense")
+    .filter((item) => item.flow === "expense" && item.countsAsMoney)
     .reduce((sum, item) => sum + item.amount, 0);
   const actualIncome = data.transactions
-    .filter((item) => item.flow === "income")
+    .filter((item) => item.flow === "income" && item.countsAsMoney)
     .reduce((sum, item) => sum + item.amount, 0);
+  const countedExpenseTransactions = data.transactions.filter((item) => item.flow === "expense" && item.countsAsMoney).length;
   const reviewCount = data.transactions.filter((item) => item.needsReview).length;
   const selectedMonthStart = Date.UTC(cursor.year, cursor.month - 1, 1);
   const currentMonthStart = Date.UTC(now.getFullYear(), now.getMonth(), 1);
@@ -206,7 +209,7 @@ export default function ModernMonthlyPlan({
   });
 
   const categoryTotals = data.categories
-    .filter((category) => category.flow === "expense")
+    .filter((category) => category.flow === "expense" && category.isSpending)
     .map((category) => ({
       ...category,
       spent: data.transactions
@@ -218,9 +221,9 @@ export default function ModernMonthlyPlan({
     }))
     .sort((a, b) => b.spent - a.spent || a.name.localeCompare(b.name));
 
-  const debtMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
-  const coreOutgoings = plannedExpenses + debtMinimums;
-  const availableToAssign = plannedIncome - coreOutgoings;
+  const debtMinimums = roundMoney(debts.reduce((sum, debt) => sum + debt.minimum, 0));
+  const coreOutgoings = roundMoney(plannedExpenses + debtMinimums);
+  const availableToAssign = roundMoney(plannedIncome - coreOutgoings);
   const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
   const emergencySaved = emergencyGoal?.saved || 0;
   const oneMonthBuffer = Math.max(0, coreOutgoings);
@@ -232,10 +235,13 @@ export default function ModernMonthlyPlan({
   const priorityDebt = orderedDebts[0];
   const positiveAvailable = Math.max(0, availableToAssign);
   const emergencyContribution = needsStarterBuffer && positiveAvailable > 0
-    ? Math.min(oneMonthBuffer - emergencySaved, positiveAvailable / (priorityDebt ? 2 : 1))
+    ? Math.min(
+        roundMoney(oneMonthBuffer - emergencySaved),
+        priorityDebt ? Math.ceil(positiveAvailable * 100 / 2) / 100 : positiveAvailable
+      )
     : 0;
-  const debtOverpayment = priorityDebt ? Math.max(0, positiveAvailable - emergencyContribution) : 0;
-  const futureContribution = priorityDebt ? 0 : Math.max(0, positiveAvailable - emergencyContribution);
+  const debtOverpayment = priorityDebt ? roundMoney(Math.max(0, positiveAvailable - emergencyContribution)) : 0;
+  const futureContribution = priorityDebt ? 0 : roundMoney(Math.max(0, positiveAvailable - emergencyContribution));
   const debtFreeMonths = estimateDebtFreeMonths(debts, strategy, debtOverpayment);
   const debtFreeDate = debtFreeMonths > 0 && debtFreeMonths < 600
     ? new Date(Date.UTC(cursor.year, cursor.month - 1 + debtFreeMonths, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric" })
@@ -248,7 +254,7 @@ export default function ModernMonthlyPlan({
     setData((current) => current ? {
       ...current,
       transactions: current.transactions.map((item) => item.id === transaction.id
-        ? { ...item, categoryId, categoryName: category?.name || "Other", needsReview: false }
+        ? { ...item, categoryId, categoryName: category?.name || "Other", countsAsMoney: category?.isSpending ?? true, needsReview: false }
         : item),
     } : current);
     await setTransactionCategory(transaction.id, categoryId, learn);
@@ -321,7 +327,7 @@ export default function ModernMonthlyPlan({
         <button className="pulse-button" onClick={() => setModal("income")} aria-label="Add or update monthly income">
           <PulseCard tone="green" icon={<ArrowDownLeft />} label="Expected income" value={money(plannedIncome)} note={actualIncome ? `${money(actualIncome)} received so far` : plannedIncome ? "Click to add or update pay" : "Start here · add take-home pay"} />
         </button>
-        <PulseCard tone="coral" icon={<ArrowUpRight />} label="Money out" value={money(spending)} note={`${data.transactions.filter((item) => item.flow === "expense").length} transactions`} />
+        <PulseCard tone="coral" icon={<ArrowUpRight />} label="Money out" value={money(spending)} note={`${countedExpenseTransactions} spending transactions · transfers excluded`} />
         <PulseCard tone="blue" icon={<WalletCards />} label="Unassigned" value={money(availableToAssign)} note={availableToAssign >= 0 ? "Available for your next priority" : "Your plan is over income"} />
         <button className={`review-pulse ${reviewCount ? "attention" : ""}`} onClick={() => { setView("transactions"); setReviewOnly(true); }}>
           <CircleAlert />
@@ -372,7 +378,7 @@ export default function ModernMonthlyPlan({
                   <label className="category-picker">
                     <select value={transaction.categoryId} onChange={(event) => categorise(transaction, event.target.value)} aria-label={`Category for ${transaction.description}`}>
                       <option value="">Needs review</option>
-                      {data.categories.filter((category) => category.flow === transaction.flow).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                      {data.categories.filter((category) => category.flow === transaction.flow || category.name === "Transfers").map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                     </select>
                   </label>
                   <strong className={transaction.flow === "expense" ? "transaction-amount expense" : "transaction-amount income"}>
@@ -493,7 +499,7 @@ export default function ModernMonthlyPlan({
               <div className="recommendation-split">
                 <RecommendationLine icon={<ShieldCheck />} label="Emergency buffer" value={emergencyContribution} note={fullEmergencyTarget > 0 ? `${money(emergencySaved)} of ${money(fullEmergencyTarget)} target saved` : "Set after essential costs are entered"} />
                 {priorityDebt ? (
-                  <RecommendationLine icon={<Target />} label={`Extra to ${priorityDebt.name}`} value={debtOverpayment} note={`${money(priorityDebt.balance)} balance · ${priorityDebt.apr.toFixed(1)}% APR${debtFreeDate ? ` · forecast debt-free ${debtFreeDate}` : ""}`} />
+                  <RecommendationLine icon={<Target />} label="Debt overpayment pot" value={debtOverpayment} note={`Starts with ${priorityDebt.name} · ${money(priorityDebt.balance)} balance · ${priorityDebt.apr.toFixed(1)}% APR${debtFreeDate ? ` · all debts forecast clear ${debtFreeDate}` : ""}`} />
                 ) : (
                   <RecommendationLine icon={<Sparkles />} label="Savings and investing" value={futureContribution} note="After this month’s costs and safety buffer" />
                 )}
@@ -672,7 +678,7 @@ function AddTransactionModal({ categories, onClose, onSaved }: { categories: Wor
       <label><span>Date</span><input type="date" required value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /></label>
       <label><span>Amount</span><div className="currency-input">£<input type="number" required min="0.01" step="0.01" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></div></label>
       <label><span>Type</span><select value={form.flow} onChange={(event) => setForm({ ...form, flow: event.target.value as "income" | "expense", categoryId: "" })}><option value="expense">Money out</option><option value="income">Money in</option></select></label>
-      <label><span>Category</span><select value={form.categoryId} onChange={(event) => setForm({ ...form, categoryId: event.target.value })}><option value="">Needs review</option>{categories.filter((category) => category.flow === form.flow).map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
+      <label><span>Category</span><select value={form.categoryId} onChange={(event) => setForm({ ...form, categoryId: event.target.value })}><option value="">Needs review</option>{categories.filter((category) => category.flow === form.flow || category.name === "Transfers").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
       <label className="wide"><span>Account</span><input value={form.accountName} onChange={(event) => setForm({ ...form, accountName: event.target.value })} /></label>
       <button className="primary-button wide" disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Add transaction</button>
     </form>

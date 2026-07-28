@@ -83,6 +83,7 @@ export async function saveDebt(input: {
   minimum: number;
 }) {
   const householdId = await getHouseholdIdOrThrow();
+  const persistedId = input.id && !input.id.startsWith("new-") ? input.id : undefined;
   const data = {
     name: input.name.trim() || "Untitled debt",
     balancePence: pence(input.balance),
@@ -90,12 +91,14 @@ export async function saveDebt(input: {
     minimumPence: pence(input.minimum),
   };
 
-  if (input.id) {
-    const existing = await prisma.debt.findFirst({ where: { id: input.id, householdId } });
+  if (persistedId) {
+    const existing = await prisma.debt.findFirst({ where: { id: persistedId, householdId } });
     if (!existing) throw new Error("Debt not found");
-    return prisma.debt.update({ where: { id: input.id }, data });
+    const saved = await prisma.debt.update({ where: { id: persistedId }, data });
+    return { id: saved.id };
   }
-  return prisma.debt.create({ data: { householdId, ...data } });
+  const saved = await prisma.debt.create({ data: { householdId, ...data } });
+  return { id: saved.id };
 }
 
 export async function removeDebt(id: string) {

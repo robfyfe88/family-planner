@@ -14,6 +14,7 @@ const DEFAULT_CATEGORIES = [
   ["Personal & lifestyle", "Lifestyle"],
   ["Debt repayments", "Debt"],
   ["Other", "Other"],
+  ["Transfers", "System", "expense", false],
 ] as const;
 
 const BANK_CATEGORY_ALIASES: Record<string, string> = {
@@ -59,9 +60,30 @@ async function ensureCategories(householdId: string) {
   });
 }
 
+async function reclassifyInternalTransfers(householdId: string) {
+  const transferCategory = await prisma.budgetCategory.findFirst({
+    where: { householdId, name: "Transfers" },
+    select: { id: true },
+  });
+  if (!transferCategory) return;
+
+  await prisma.transaction.updateMany({
+    where: {
+      householdId,
+      OR: [
+        { description: { contains: "Joint Savings", mode: "insensitive" } },
+        { description: { contains: "Transfer from Easy Saver", mode: "insensitive" } },
+        { description: { contains: "Transfer into Easy Saver", mode: "insensitive" } },
+      ],
+    },
+    data: { categoryId: transferCategory.id },
+  });
+}
+
 export async function fetchMoneyWorkspace(year: number, month: number) {
   const householdId = await getHouseholdIdOrThrow();
   await ensureCategories(householdId);
+  await reclassifyInternalTransfers(householdId);
 
   const [categories, transactions, accounts, rules] = await Promise.all([
     prisma.budgetCategory.findMany({
@@ -88,6 +110,7 @@ export async function fetchMoneyWorkspace(year: number, month: number) {
       name: category.name,
       group: category.group || "Other",
       flow: category.flow,
+      isSpending: category.isSpending,
       planned: (category.budgets[0]?.plannedPence || 0) / 100,
     })),
     transactions: transactions.map((transaction) => ({
@@ -98,6 +121,7 @@ export async function fetchMoneyWorkspace(year: number, month: number) {
       flow: transaction.flow,
       categoryId: transaction.categoryId || "",
       categoryName: transaction.category?.name || "Needs review",
+      countsAsMoney: transaction.category?.isSpending ?? true,
       accountName: transaction.account?.name || "Manual",
       needsReview: !transaction.categoryId,
     })),
@@ -212,7 +236,10 @@ export async function importStatementRows(rows: Array<{
     const bankCategory = row.bankCategory?.trim().toUpperCase().replace(/[\s-]+/g, "_") || "";
     const mappedName = BANK_CATEGORY_ALIASES[bankCategory];
     const debtLabel = isDebtLabel(description);
-    const mappedCategory = debtLabel
+    const internalTransfer = /\bjoint savings\b|transfer (?:from|into) easy saver/i.test(description);
+    const mappedCategory = internalTransfer
+      ? categories.find((item) => item.name === "Transfers")
+      : debtLabel
       ? categories.find((item) => item.name === "Debt repayments" && item.flow === "expense")
       : mappedName
       ? categories.find((item) => item.name === mappedName && item.flow === flow)

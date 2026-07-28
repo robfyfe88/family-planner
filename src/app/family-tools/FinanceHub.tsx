@@ -48,6 +48,8 @@ const number = (value: string) => {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 };
 
+const roundMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
 const monthName = new Intl.DateTimeFormat("en-GB", { month: "long" }).format(new Date());
 
 function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
@@ -106,6 +108,7 @@ export default function FinanceHub() {
   const [view, setView] = React.useState<View>("overview");
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [savingDebtId, setSavingDebtId] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState("");
   const [income, setIncome] = React.useState(0);
   const [expenses, setExpenses] = React.useState(0);
@@ -143,18 +146,21 @@ export default function FinanceHub() {
     load();
   }, [load]);
 
-  const debtTotal = debts.reduce((sum, debt) => sum + debt.balance, 0);
-  const debtMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
+  const debtTotal = roundMoney(debts.reduce((sum, debt) => sum + debt.balance, 0));
+  const debtMinimums = roundMoney(debts.reduce((sum, debt) => sum + debt.minimum, 0));
   const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
   const emergencySaved = emergencyGoal?.saved || 0;
-  const extraAfterCommitments = Math.max(0, income - expenses - debtMinimums);
-  const starterEmergencyTarget = expenses + debtMinimums;
-  const fullEmergencyTarget = starterEmergencyTarget * Math.max(1, profile.emergencyFundMonths);
+  const extraAfterCommitments = roundMoney(Math.max(0, income - expenses - debtMinimums));
+  const starterEmergencyTarget = roundMoney(expenses + debtMinimums);
+  const fullEmergencyTarget = roundMoney(starterEmergencyTarget * Math.max(1, profile.emergencyFundMonths));
   const suggestedSavings = emergencySaved < starterEmergencyTarget
-    ? Math.min(starterEmergencyTarget - emergencySaved, debtTotal > 0 ? extraAfterCommitments / 2 : extraAfterCommitments)
+    ? Math.min(
+        roundMoney(starterEmergencyTarget - emergencySaved),
+        debtTotal > 0 ? Math.ceil(extraAfterCommitments * 100 / 2) / 100 : extraAfterCommitments
+      )
     : debtTotal === 0 ? extraAfterCommitments : 0;
-  const suggestedDebtExtra = debtTotal > 0 ? Math.max(0, extraAfterCommitments - suggestedSavings) : 0;
-  const shortfall = Math.max(0, expenses + debtMinimums - income);
+  const suggestedDebtExtra = debtTotal > 0 ? roundMoney(Math.max(0, extraAfterCommitments - suggestedSavings)) : 0;
+  const shortfall = roundMoney(Math.max(0, expenses + debtMinimums - income));
   const payoff = React.useMemo(
     () => calculatePayoff(debts, profile.strategy, suggestedDebtExtra),
     [debts, profile.strategy, suggestedDebtExtra]
@@ -171,13 +177,18 @@ export default function FinanceHub() {
   }
 
   async function persistDebt(debt: Debt) {
+    if (savingDebtId) return;
+    setSavingDebtId(debt.id);
     try {
-      const saved = await saveDebt(debt);
+      const saved = await saveDebt({ ...debt, id: debt.id.startsWith("new-") ? undefined : debt.id });
       if (debt.id.startsWith("new-")) {
         setDebts((items) => items.map((item) => item.id === debt.id ? { ...debt, id: saved.id } : item));
       }
+      setMessage(`${debt.name.trim() || "Debt"} saved.`);
     } catch {
       setMessage("That debt didn’t save. Please try again.");
+    } finally {
+      setSavingDebtId(null);
     }
   }
 
@@ -261,6 +272,7 @@ export default function FinanceHub() {
           profile={profile}
           updateProfile={updateProfile}
           persistDebt={persistDebt}
+          savingDebtId={savingDebtId}
           payoff={payoff}
           suggestedExtra={suggestedDebtExtra}
           onRemove={async (id) => {
@@ -426,9 +438,10 @@ function FlowRow({ label, value, total, color }: { label: string; value: number;
   );
 }
 
-function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, payoff, suggestedExtra, onRemove }: {
+function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, savingDebtId, payoff, suggestedExtra, onRemove }: {
   debts: Debt[]; setDebts: React.Dispatch<React.SetStateAction<Debt[]>>; profile: Profile;
   updateProfile: (patch: Partial<Profile>) => Promise<void>; persistDebt: (debt: Debt) => Promise<void>;
+  savingDebtId: string | null;
   payoff: ReturnType<typeof calculatePayoff>; suggestedExtra: number; onRemove: (id: string) => Promise<void>;
 }) {
   const total = debts.reduce((sum, debt) => sum + debt.balance, 0);
@@ -446,6 +459,13 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, pay
           <div><span>Monthly attack</span><strong>{money(payoff.monthlyBudget)}</strong></div>
           <div><span>Projected debt-free</span><strong>{total === 0 ? "Today" : formatMonths(payoff.months)}</strong></div>
           <div><span>Projected interest</span><strong>{money(payoff.interest)}</strong></div>
+        </div>
+        <div className="debt-maths" aria-label="How this month's debt payment is calculated">
+          <span><small>Debt minimums</small><strong>{money(payoff.monthlyBudget - suggestedExtra)}</strong></span>
+          <b>+</b>
+          <span><small>Affordable overpayment</small><strong>{money(suggestedExtra)}</strong></span>
+          <b>=</b>
+          <span><small>Total debt payment</small><strong>{money(payoff.monthlyBudget)}</strong></span>
         </div>
         <div className="strategy-box">
           <div>
@@ -472,10 +492,14 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, pay
             {[...debts].sort((a, b) => profile.strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance).map((debt, index) => (
               <article className="editable-row" key={debt.id}>
                 <div className="row-order">{index + 1}</div>
-                <label><span>Name</span><input value={debt.name} onChange={(e) => update(debt.id, { name: e.target.value })} onBlur={() => persistDebt(debt)} /></label>
-                <MoneyInput label="Balance" value={debt.balance} onChange={(balance) => update(debt.id, { balance })} onBlur={() => persistDebt(debt)} />
-                <label><span>APR</span><div className="suffix-input"><input type="number" min="0" step=".1" value={debt.apr} onChange={(e) => update(debt.id, { apr: number(e.target.value) })} onBlur={() => persistDebt(debt)} /><b>%</b></div></label>
-                <MoneyInput label="Minimum" value={debt.minimum} onChange={(minimum) => update(debt.id, { minimum })} onBlur={() => persistDebt(debt)} />
+                <label><span>Name</span><input value={debt.name} onChange={(e) => update(debt.id, { name: e.target.value })} /></label>
+                <MoneyInput label="Balance" value={debt.balance} onChange={(balance) => update(debt.id, { balance })} />
+                <label><span>APR</span><div className="suffix-input"><input type="number" min="0" step=".01" value={debt.apr} onChange={(e) => update(debt.id, { apr: number(e.target.value) })} /><b>%</b></div></label>
+                <MoneyInput label="Minimum" value={debt.minimum} onChange={(minimum) => update(debt.id, { minimum })} />
+                <button className="soft-button debt-save-button" disabled={Boolean(savingDebtId)} onClick={() => persistDebt(debt)}>
+                  {savingDebtId === debt.id ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
+                  {savingDebtId === debt.id ? "Saving" : "Save"}
+                </button>
                 <button className="icon-button danger" onClick={() => onRemove(debt.id)} aria-label={`Remove ${debt.name}`}><Trash2 size={16} /></button>
               </article>
             ))}
@@ -543,11 +567,11 @@ function EmergencySavings({ goal, profile, updateProfile, persistGoal, target, s
   );
 }
 
-function MoneyInput({ label, value, onChange, onBlur }: { label: string; value: number; onChange: (value: number) => void; onBlur: () => void }) {
+function MoneyInput({ label, value, onChange, onBlur }: { label: string; value: number; onChange: (value: number) => void; onBlur?: () => void }) {
   return (
     <label className="money-field">
       <span>{label}</span>
-      <div><b>£</b><input type="number" min="0" step="1" value={value} onChange={(e) => onChange(number(e.target.value))} onBlur={onBlur} /></div>
+      <div><b>£</b><input type="number" min="0" step=".01" value={value} onChange={(e) => onChange(number(e.target.value))} onBlur={onBlur} /></div>
     </label>
   );
 }

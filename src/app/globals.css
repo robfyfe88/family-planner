@@ -601,6 +601,23 @@ input[type="text"].no-spinners {
 .debt-kpis span { display: block; color: #75827e; font-size: .68rem; }
 .debt-kpis strong { display: block; margin-top: .25rem; font-size: 1.15rem; letter-spacing: -.025em; }
 
+.debt-maths {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: .65rem;
+  margin-top: .8rem;
+  padding: .8rem;
+  border: 1px solid rgba(22, 51, 47, .1);
+  border-radius: .85rem;
+  background: rgba(255, 253, 248, .7);
+}
+.debt-maths small,
+.debt-maths strong { display: block; }
+.debt-maths small { color: #74817d; font-size: .62rem; }
+.debt-maths strong { margin-top: .14rem; font-size: .86rem; }
+.debt-maths > b { color: #9aa39f; font-size: .8rem; }
+
 .strategy-box {
   display: grid;
   grid-template-columns: 1fr minmax(180px, .35fr);
@@ -654,7 +671,7 @@ input[type="text"].no-spinners {
 .debt-list { display: grid; gap: .55rem; }
 .editable-row {
   display: grid;
-  grid-template-columns: auto 1.3fr repeat(3, 1fr) auto;
+  grid-template-columns: auto 1.3fr repeat(3, 1fr) auto auto;
   align-items: end;
   gap: .6rem;
   padding: .8rem;
@@ -662,6 +679,7 @@ input[type="text"].no-spinners {
   border-radius: .9rem;
   background: #fff;
 }
+.debt-save-button { align-self: end; justify-content: center; height: 38px; }
 
 .row-order {
   display: grid;
@@ -802,10 +820,13 @@ input[type="text"].no-spinners {
   .panel-title-row { align-items: stretch; flex-direction: column; }
   .panel-title-row .soft-button { align-self: flex-start; }
   .strategy-box { grid-template-columns: 1fr; }
+  .debt-maths { grid-template-columns: 1fr; }
+  .debt-maths > b { display: none; }
   .editable-row { grid-template-columns: auto 1fr; align-items: end; }
   .editable-row > label { grid-column: 1 / -1; }
   .editable-row .row-order { grid-column: 1; grid-row: 1; }
   .editable-row .icon-button { grid-column: 2; grid-row: 1; justify-self: end; }
+  .editable-row .debt-save-button { grid-column: 1 / -1; }
   .goal-grid { grid-template-columns: 1fr; }
   .target-input-row,
   .goal-fields { grid-template-columns: 1fr; }
