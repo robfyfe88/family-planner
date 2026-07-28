@@ -1041,7 +1041,7 @@ input[type="text"].no-spinners {
 
 .workspace-monthbar {
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
   gap: 1.2rem;
   padding: .65rem;
@@ -1054,14 +1054,14 @@ input[type="text"].no-spinners {
 .month-stepper button { display: grid; width: 32px; height: 32px; place-items: center; border-radius: .55rem; color: #6e7a76; }
 .month-stepper button:hover { background: #eef1eb; }
 .month-stepper svg { width: 16px; }
-.month-stepper strong { min-width: 145px; text-align: center; font-size: .8rem; }
+.month-stepper strong { min-width: 255px; text-align: center; font-size: .8rem; }
 .month-status { display: flex; align-items: center; gap: .55rem; color: #7b8884; font-size: .63rem; }
 .month-status > div { width: 90px; height: 5px; overflow: hidden; border-radius: 99px; background: #e4e7e1; }
 .month-status i { display: block; height: 100%; border-radius: inherit; background: var(--money-mint-dark); }
 
 .workspace-pulse {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: .65rem;
   margin-top: .65rem;
 }
@@ -1216,7 +1216,7 @@ input[type="text"].no-spinners {
 .income-editor { display: grid; gap: .45rem; margin-top: .8rem; }
 .income-editor > article {
   display: grid;
-  grid-template-columns: minmax(125px, 1fr) 120px 120px 70px auto auto;
+  grid-template-columns: minmax(125px, 1fr) 120px 120px auto auto;
   align-items: end;
   gap: .45rem;
   padding: .65rem;
@@ -1229,9 +1229,8 @@ input[type="text"].no-spinners {
 .income-editor .currency-input { height: 36px; background: #fff; }
 .income-editor .icon-button { width: 36px; height: 36px; }
 .income-save-button { justify-content: center; height: 36px; white-space: nowrap; }
-.income-payday { grid-column: 1 / -1; color: #7d8985; font-size: .56rem; }
 .commitment-editor { display: grid; gap: .45rem; max-height: 430px; margin-top: .8rem; overflow-y: auto; }
-.commitment-editor > article { display: grid; grid-template-columns: minmax(145px, 1fr) 125px 72px auto; align-items: end; gap: .45rem; padding: .6rem; border: 1px solid #e7e5dd; border-radius: .7rem; background: #fafaf6; }
+.commitment-editor > article { display: grid; grid-template-columns: minmax(145px, 1fr) 125px auto; align-items: end; gap: .45rem; padding: .6rem; border: 1px solid #e7e5dd; border-radius: .7rem; background: #fafaf6; }
 .commitment-editor label > span { display: block; margin-bottom: .2rem; color: #7b8884; font-size: .54rem; font-weight: 650; }
 .commitment-editor label > input { width: 100%; height: 36px; padding: 0 .45rem; border: 1px solid #dfe1da; border-radius: .5rem; background: #fff; font-size: .66rem; }
 .commitment-editor .currency-input { height: 36px; background: #fff; }
@@ -1244,6 +1243,16 @@ input[type="text"].no-spinners {
 .commitment-static small { margin-top: .1rem; color: #84908c; font-size: .54rem; }
 .commitment-static strong { font-size: .72rem; }
 .commitment-static.debt-total { border-color: #dfd5ea; background: #f7f3fa; }
+.flex-order { grid-column: 1 / -1; }
+.flex-allowance-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .8rem; }
+.flex-allowance-editor article { display: grid; grid-template-columns: minmax(0, 1fr) 115px 115px auto; align-items: end; gap: .5rem; padding: .7rem; border: 1px solid #e7dfd2; border-radius: .75rem; background: #fcfaf5; }
+.flex-allowance-editor article > span b,
+.flex-allowance-editor article > span small { display: block; }
+.flex-allowance-editor article > span b { font-size: .68rem; }
+.flex-allowance-editor article > span small { margin-top: .18rem; color: #7e8985; font-size: .56rem; line-height: 1.4; }
+.flex-allowance-editor label > span { display: block; margin-bottom: .2rem; color: #7b8884; font-size: .54rem; font-weight: 650; }
+.flex-allowance-editor .currency-input { height: 36px; background: #fff; }
+.flex-allowance-editor .soft-button { justify-content: center; height: 36px; }
 .debt-detection-note { display: flex; align-items: flex-start; gap: .45rem; margin-top: .75rem; padding: .65rem; border-radius: .65rem; color: #5d5276; background: #f1edf7; font-size: .64rem; line-height: 1.4; }
 .debt-detection-note svg { flex: none; }
 .empty-order-action { padding: .65rem; border: 1px dashed #b9c8c1; border-radius: .65rem; color: var(--money-mint-dark); background: #f1f6f3; font-size: .64rem; font-weight: 700; text-align: left; }
@@ -1343,6 +1352,8 @@ input[type="text"].no-spinners {
 @media (max-width: 900px) {
   .workspace-pulse { grid-template-columns: repeat(2, 1fr); }
   .money-order { grid-template-columns: 1fr; }
+  .flex-order { grid-column: auto; }
+  .flex-allowance-editor { grid-template-columns: 1fr; }
   .recommendation-card { grid-column: auto; }
   .transaction-tools { grid-template-columns: 1fr 1fr; }
   .transaction-list-head { display: none; }
@@ -1360,6 +1371,7 @@ input[type="text"].no-spinners {
   .workspace-actions { width: 100%; }
   .workspace-actions button { flex: 1; }
   .workspace-monthbar { grid-template-columns: 1fr auto; }
+  .month-stepper strong { min-width: 0; }
   .month-status { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
   .workspace-monthbar > .icon-button { grid-column: 2; grid-row: 1; }
   .forecast-button { grid-column: 1 / -1; grid-row: 3; width: 100%; }
@@ -1380,6 +1392,9 @@ input[type="text"].no-spinners {
   .income-editor > article label:first-child { grid-column: 1 / -1; }
   .income-editor .income-save-button { grid-column: 1 / -1; }
   .income-editor .icon-button { grid-column: 2; grid-row: 1; justify-self: end; }
+  .flex-allowance-editor article { grid-template-columns: 1fr 1fr; }
+  .flex-allowance-editor article > span { grid-column: 1 / -1; }
+  .flex-allowance-editor article .soft-button { grid-column: 1 / -1; }
   .recommendation-split { grid-template-columns: 1fr; }
   .payday-routine { align-items: stretch; flex-direction: column; }
   .payday-routine .soft-button { width: 100%; }

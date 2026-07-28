@@ -57,6 +57,7 @@ const number = (value: string) => {
 const roundMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
 const monthName = new Intl.DateTimeFormat("en-GB", { month: "long" }).format(new Date());
+const flexLabels = new Set(["unforeseen monthly costs", "joint family spending"]);
 
 function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
   const working = debts
@@ -116,6 +117,7 @@ export default function FinanceHub() {
   const [message, setMessage] = React.useState("");
   const [income, setIncome] = React.useState(0);
   const [expenses, setExpenses] = React.useState(0);
+  const [flexibleCosts, setFlexibleCosts] = React.useState(0);
   const [debts, setDebts] = React.useState<Debt[]>([]);
   const [goals, setGoals] = React.useState<Goal[]>([]);
   const [profile, setProfile] = React.useState<Profile>({
@@ -128,13 +130,18 @@ export default function FinanceHub() {
   const load = React.useCallback(async (quiet = false) => {
     quiet ? setRefreshing(true) : setLoading(true);
     const now = new Date();
+    const fundedPlanDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     try {
-      const [budget, freedom] = await Promise.all([
+      const [payBudget, fundedBudget, freedom] = await Promise.all([
         fetchBudgetRowsForMonth(now.getFullYear(), now.getMonth() + 1),
+        fetchBudgetRowsForMonth(fundedPlanDate.getFullYear(), fundedPlanDate.getMonth() + 1),
         fetchFreedomData(),
       ]);
-      setIncome(budget.incomes.reduce((sum, row) => sum + row.amount, 0));
-      setExpenses(budget.expenses.reduce((sum, row) => sum + row.amount, 0));
+      setIncome(payBudget.incomes.reduce((sum, row) => sum + row.amount, 0));
+      setExpenses(fundedBudget.expenses.reduce((sum, row) => sum + row.amount, 0));
+      setFlexibleCosts(fundedBudget.expenses
+        .filter((row) => flexLabels.has(row.label.trim().toLowerCase()))
+        .reduce((sum, row) => sum + row.amount, 0));
       setDebts(freedom.debts);
       setGoals(freedom.goals);
       setProfile(freedom.profile);
@@ -256,6 +263,7 @@ export default function FinanceHub() {
         <Overview
           income={income}
           expenses={expenses}
+          flexibleCosts={flexibleCosts}
           debtMinimums={debtMinimums}
           suggestedSavings={suggestedSavings}
           suggestedDebtExtra={suggestedDebtExtra}
@@ -323,6 +331,7 @@ function FinanceNavItem({ active, onClick, icon, label }: { active: boolean; onC
 function Overview(props: {
   income: number;
   expenses: number;
+  flexibleCosts: number;
   debtMinimums: number;
   suggestedSavings: number;
   suggestedDebtExtra: number;
@@ -335,9 +344,10 @@ function Overview(props: {
   onNavigate: (view: View) => void;
 }) {
   const {
-    income, expenses, debtMinimums, suggestedSavings, suggestedDebtExtra, shortfall,
+    income, expenses, flexibleCosts, debtMinimums, suggestedSavings, suggestedDebtExtra, shortfall,
     emergencySaved, starterEmergencyTarget, debtTotal, attackableDebtTotal, payoffMonths, onNavigate,
   } = props;
+  const regularExpenses = roundMoney(Math.max(0, expenses - flexibleCosts));
   const budgetHealth = income <= 0
     ? "Add your income to get started"
     : shortfall > 0
@@ -349,7 +359,7 @@ function Overview(props: {
     <div className="finance-overview">
       <section className="money-scorecard">
         <div className="scorecard-copy">
-          <span className="section-kicker">{monthName} pulse</span>
+          <span className="section-kicker">{monthName} pay cycle</span>
           <h2>{budgetHealth}</h2>
           <p>
             {income <= 0
@@ -359,20 +369,20 @@ function Overview(props: {
                 : `${money(extra)} remains after commitments. HearthPlan assigns it to emergency savings and debt below.`}
           </p>
           <button className="primary-button" onClick={() => onNavigate("plan")}>
-            Review this month <ArrowRight size={17} />
+            Review this pay cycle <ArrowRight size={17} />
           </button>
         </div>
         <div className="overview-allocation">
           <span><small>Expected income</small><strong>{money(income)}</strong></span>
           <span><small>Bills + debt minimums</small><strong>{money(expenses + debtMinimums)}</strong></span>
-          <span><small>Left to assign</small><strong>{money(extra)}</strong></span>
+          <span><small>For savings + debt</small><strong>{money(extra)}</strong></span>
         </div>
       </section>
 
       <section className="stat-grid">
         <MetricCard icon={<Banknote />} tone="mint" label="Expected income" value={money(income)} note="Both take-home pays" />
-        <MetricCard icon={<CalendarDays />} tone="sand" label="Commitments" value={money(expenses + debtMinimums)} note={`${money(expenses)} bills · ${money(debtMinimums)} debt minimums`} />
-        <MetricCard icon={<PiggyBank />} tone="blue" label="Save this month" value={money(suggestedSavings)} note={`${money(emergencySaved)} currently in your emergency fund`} />
+        <MetricCard icon={<CalendarDays />} tone="sand" label="Planned outgoings" value={money(expenses + debtMinimums)} note={`${money(regularExpenses)} commitments · ${money(flexibleCosts)} flexible costs · ${money(debtMinimums)} debt minimums`} />
+        <MetricCard icon={<PiggyBank />} tone="blue" label="Save from this pay" value={money(suggestedSavings)} note={`${money(emergencySaved)} currently in your emergency fund`} />
         <MetricCard
           icon={<CreditCard />}
           tone="lavender"
@@ -385,7 +395,7 @@ function Overview(props: {
       <section className="overview-grid">
         <article className="finance-panel action-panel">
           <div className="panel-title-row">
-            <div><span className="section-kicker">Three steps</span><h3>Complete this month in order</h3></div>
+            <div><span className="section-kicker">Three checks</span><h3>Complete this pay cycle in order</h3></div>
             <Flag size={20} />
           </div>
           <ActionRow
@@ -397,7 +407,7 @@ function Overview(props: {
           <ActionRow
             done={debtTotal === 0}
             title={attackableDebtTotal > 0 ? "Check the priority debt" : debtTotal > 0 ? "Keep fixed 0% plans on schedule" : "Add your debt balances"}
-            detail={attackableDebtTotal > 0 ? `${money(suggestedDebtExtra)} extra this month · projected ${formatMonths(payoffMonths)}` : debtTotal > 0 ? "Minimum payments only; no overpayments are assigned." : "Add balances, minimums and APR where known."}
+            detail={attackableDebtTotal > 0 ? `${money(suggestedDebtExtra)} extra from this pay · projected ${formatMonths(payoffMonths)}` : debtTotal > 0 ? "Minimum payments only; no overpayments are assigned." : "Add balances, minimums and APR where known."}
             onClick={() => onNavigate("debt")}
           />
           <ActionRow
@@ -410,16 +420,17 @@ function Overview(props: {
 
         <article className="finance-panel cashflow-panel">
           <div className="panel-title-row">
-            <div><span className="section-kicker">Zero left unassigned</span><h3>Where this month goes</h3></div>
+            <div><span className="section-kicker">Fully allocated</span><h3>Where this pay goes</h3></div>
             <CalendarDays size={20} />
           </div>
           <FlowRow label="Income" value={income} total={income || 1} color="var(--money-mint)" />
-          <FlowRow label="Regular commitments" value={expenses} total={income || Math.max(expenses, 1)} color="var(--money-coral)" />
+          <FlowRow label="Regular commitments" value={regularExpenses} total={income || Math.max(regularExpenses, 1)} color="var(--money-coral)" />
+          <FlowRow label="Real-life allowances" value={flexibleCosts} total={income || Math.max(flexibleCosts, 1)} color="#c9a86a" />
           <FlowRow label="Debt minimums" value={debtMinimums} total={income || Math.max(debtMinimums, 1)} color="#b98a72" />
           <FlowRow label="Emergency savings" value={suggestedSavings} total={income || Math.max(suggestedSavings, 1)} color="var(--money-blue)" />
           <FlowRow label="Extra debt payment" value={suggestedDebtExtra} total={income || Math.max(suggestedDebtExtra, 1)} color="#836ca7" />
           <div className={`cashflow-balance ${shortfall > 0 ? "negative" : ""}`}>
-            <span>{shortfall > 0 ? "Plan shortfall" : "Unassigned"}</span><strong>{money(shortfall)}</strong>
+            <span>{shortfall > 0 ? "Plan shortfall" : "Remaining after plan"}</span><strong>{money(shortfall)}</strong>
           </div>
         </article>
       </section>
@@ -479,11 +490,11 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, sav
         </div>
         <div className="debt-kpis">
           <div><span>Total remaining</span><strong>{money(total)}</strong></div>
-          <div><span>Monthly attack</span><strong>{money(payoff.monthlyBudget)}</strong></div>
+          <div><span>Planned debt payment</span><strong>{money(payoff.monthlyBudget)}</strong></div>
           <div><span>Projected debt-free</span><strong>{total === 0 ? "Today" : formatMonths(payoff.months)}</strong></div>
           <div><span>Projected interest</span><strong>{money(payoff.interest)}</strong></div>
         </div>
-        <div className="debt-maths" aria-label="How this month's debt payment is calculated">
+        <div className="debt-maths" aria-label="How this pay cycle's debt payment is calculated">
           <span><small>Debt minimums</small><strong>{money(payoff.monthlyBudget - suggestedExtra)}</strong></span>
           <b>+</b>
           <span><small>Affordable overpayment</small><strong>{money(suggestedExtra)}</strong></span>
@@ -499,7 +510,7 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, sav
             </div>
             <p>{profile.strategy === "avalanche" ? "Highest APR first — usually saves the most interest." : "Smallest eligible balance first — fixed 0% plans stay on minimum payments."}</p>
           </div>
-          <div className="recommended-extra"><span>From this month&apos;s plan</span><strong>{money(suggestedExtra)}</strong><small>extra after commitments and emergency saving</small></div>
+          <div className="recommended-extra"><span>From this pay-cycle plan</span><strong>{money(suggestedExtra)}</strong><small>extra after commitments, flexible costs and emergency saving</small></div>
         </div>
         {allocations.length > 0 && (
           <div className="debt-allocation">
@@ -577,7 +588,7 @@ function EmergencySavings({ goal, profile, updateProfile, persistGoal, target, s
         </div>
         <div className="emergency-kpis">
           <div><span>Saved now</span><strong>{money(saved)}</strong></div>
-          <div><span>Save this month</span><strong>{money(suggestedMonthly)}</strong></div>
+          <div><span>Save from this pay</span><strong>{money(suggestedMonthly)}</strong></div>
           <div><span>Starter buffer</span><strong>{money(starterTarget)}</strong></div>
           <div><span>Full target</span><strong>{money(target)}</strong></div>
         </div>
