@@ -42,12 +42,18 @@ import {
   saveCategoryRule,
   setTransactionCategory,
 } from "@/app/app/budget/workspace-actions";
+import {
+  allocateDebtOverpayment,
+  canReceiveOverpayment,
+  orderDebts,
+  overpaymentCapacity,
+} from "@/lib/debt-plan";
 
 type Workspace = Awaited<ReturnType<typeof fetchMoneyWorkspace>>;
 type WorkspaceTransaction = Workspace["transactions"][number];
 type WorkspaceCategory = Workspace["categories"][number];
 type WorkspaceView = "transactions" | "categories" | "plan" | "rules";
-type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
+type Debt = { id: string; name: string; balance: number; apr: number; minimum: number; promotionalEndDate: string };
 type Goal = { id: string; name: string; target: number; saved: number; monthly: number; targetDate: string };
 
 type ModernMonthlyPlanProps = {
@@ -104,9 +110,10 @@ function estimateDebtFreeMonths(
       debt.balance -= payment;
       remaining -= payment;
     });
-    const ordered = working
-      .filter((debt) => debt.balance > 0)
-      .sort((a, b) => strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance);
+    const ordered = orderDebts(
+      working.filter((debt) => debt.balance > 0 && canReceiveOverpayment(debt)),
+      strategy
+    );
     ordered.forEach((debt) => {
       if (remaining <= 0) return;
       const payment = Math.min(debt.balance, remaining);
@@ -141,6 +148,7 @@ export default function ModernMonthlyPlan({
   const [committedBills, setCommittedBills] = React.useState<BudgetRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [savingIncomeId, setSavingIncomeId] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] = React.useState("all");
   const [reviewOnly, setReviewOnly] = React.useState(false);
@@ -229,19 +237,24 @@ export default function ModernMonthlyPlan({
   const oneMonthBuffer = Math.max(0, coreOutgoings);
   const fullEmergencyTarget = oneMonthBuffer * Math.max(1, emergencyFundMonths);
   const needsStarterBuffer = emergencySaved < oneMonthBuffer;
-  const orderedDebts = [...debts]
-    .filter((debt) => debt.balance > 0)
-    .sort((a, b) => strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance);
+  const orderedDebts = orderDebts(
+    debts.filter((debt) => debt.balance > debt.minimum && canReceiveOverpayment(debt)),
+    strategy
+  );
   const priorityDebt = orderedDebts[0];
+  const fixedZeroDebts = debts.filter((debt) => debt.balance > 0 && !canReceiveOverpayment(debt));
   const positiveAvailable = Math.max(0, availableToAssign);
-  const emergencyContribution = needsStarterBuffer && positiveAvailable > 0
+  const baseEmergencyContribution = needsStarterBuffer && positiveAvailable > 0
     ? Math.min(
         roundMoney(oneMonthBuffer - emergencySaved),
         priorityDebt ? Math.ceil(positiveAvailable * 100 / 2) / 100 : positiveAvailable
       )
     : 0;
-  const debtOverpayment = priorityDebt ? roundMoney(Math.max(0, positiveAvailable - emergencyContribution)) : 0;
+  const proposedDebtOverpayment = priorityDebt ? roundMoney(Math.max(0, positiveAvailable - baseEmergencyContribution)) : 0;
+  const debtOverpayment = roundMoney(Math.min(proposedDebtOverpayment, overpaymentCapacity(debts)));
+  const emergencyContribution = roundMoney(baseEmergencyContribution + proposedDebtOverpayment - debtOverpayment);
   const futureContribution = priorityDebt ? 0 : roundMoney(Math.max(0, positiveAvailable - emergencyContribution));
+  const debtAllocations = allocateDebtOverpayment(debts, strategy, debtOverpayment).allocations;
   const debtFreeMonths = estimateDebtFreeMonths(debts, strategy, debtOverpayment);
   const debtFreeDate = debtFreeMonths > 0 && debtFreeMonths < 600
     ? new Date(Date.UTC(cursor.year, cursor.month - 1 + debtFreeMonths, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric" })
@@ -259,6 +272,49 @@ export default function ModernMonthlyPlan({
     } : current);
     await setTransactionCategory(transaction.id, categoryId, learn);
     if (learn) setToast(`Categorised as ${category?.name}. Future matches will follow this rule.`);
+  }
+
+  function updateIncome(id: string | undefined, patch: Partial<BudgetRow>) {
+    const next = incomeRows.map((item) => item.id === id ? { ...item, ...patch } : item);
+    setIncomeRows(next);
+    setPlannedIncome(roundMoney(next.reduce((sum, item) => sum + item.amount, 0)));
+  }
+
+  async function persistIncome(row: BudgetRow) {
+    if (!row.id || savingIncomeId) return;
+    setSavingIncomeId(row.id);
+    try {
+      const usualAmount = row.usualAmount ?? row.amount;
+      await upsertBudgetRowScoped("income", {
+        id: row.id,
+        label: row.label,
+        amount: usualAmount,
+        owner: row.owner,
+        year: cursor.year,
+        month1to12: cursor.month,
+        scope: "from-now-on",
+        expectedDay: row.expectedDay,
+      });
+      if (roundMoney(row.amount) !== roundMoney(usualAmount)) {
+        await upsertBudgetRowScoped("income", {
+          id: row.id,
+          label: row.label,
+          amount: row.amount,
+          owner: row.owner,
+          year: cursor.year,
+          month1to12: cursor.month,
+          scope: "this-month",
+          expectedDay: row.expectedDay,
+        });
+      }
+      onFinanceChanged?.();
+      await load(true);
+      setToast(`${row.label} saved · ${money(row.amount)} this month, ${money(usualAmount)} usual pay.`);
+    } catch {
+      setToast("That income did not save. Please try again.");
+    } finally {
+      setSavingIncomeId(null);
+    }
   }
 
   function updateCommitment(id: string | undefined, patch: Partial<BudgetRow>) {
@@ -439,12 +495,26 @@ export default function ModernMonthlyPlan({
                 <p>What actually lands in your household accounts this month.</p>
               </div>
               <button className="soft-button" onClick={() => setModal("income")}><Plus size={15} /> Add income</button>
-              <div className="order-lines">
+              <div className="income-editor">
                 {incomeRows.map((income) => (
-                  <span key={income.id || income.label}>
-                    <b>{income.label}<small>{paydayLabel(cursor.year, cursor.month, income.expectedDay)}</small></b>
-                    <em>{money(income.amount)}</em>
-                  </span>
+                  <article key={income.id || income.label}>
+                    <label><span>Income</span><input value={income.label} onChange={(event) => updateIncome(income.id, { label: event.target.value })} /></label>
+                    <label><span>{MONTHS[cursor.month - 1]} take-home</span><div className="currency-input">£<input type="number" min="0" step=".01" value={income.amount} onChange={(event) => updateIncome(income.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                    <label><span>Usual monthly pay</span><div className="currency-input">£<input type="number" min="0" step=".01" value={income.usualAmount ?? income.amount} onChange={(event) => updateIncome(income.id, { usualAmount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                    <label><span>Payday</span><input type="number" min="1" max="31" value={income.expectedDay || ""} placeholder="Day" onChange={(event) => updateIncome(income.id, { expectedDay: event.target.value ? Number(event.target.value) : null })} /></label>
+                    <button className="soft-button income-save-button" disabled={Boolean(savingIncomeId)} onClick={() => persistIncome(income)}>
+                      {savingIncomeId === income.id ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
+                      {savingIncomeId === income.id ? "Saving" : "Save income"}
+                    </button>
+                    <button className="icon-button danger" aria-label={`Remove ${income.label}`} onClick={async () => {
+                      if (!income.id) return;
+                      await deleteBudgetRowScoped(income.id, "entire-range", cursor.year, cursor.month);
+                      setIncomeRows((items) => items.filter((item) => item.id !== income.id));
+                      setPlannedIncome((value) => roundMoney(Math.max(0, value - income.amount)));
+                      onFinanceChanged?.();
+                    }}><Trash2 size={15} /></button>
+                    <small className="income-payday">{paydayLabel(cursor.year, cursor.month, income.expectedDay)}</small>
+                  </article>
                 ))}
                 {incomeRows.length === 0 && <button className="empty-order-action" onClick={() => setModal("income")}>Add salary, benefits or other regular income</button>}
               </div>
@@ -487,24 +557,35 @@ export default function ModernMonthlyPlan({
               <div className="order-number">3</div>
               <div className="order-heading">
                 <span className="section-kicker">Recommended next move</span>
-                <h3>{availableToAssign < 0 ? "Close the gap before overpaying" : priorityDebt ? `Focus on ${priorityDebt.name}` : "Build your financial future"}</h3>
+                <h3>{availableToAssign < 0 ? "Close the gap before overpaying" : priorityDebt ? `Focus on ${priorityDebt.name}` : fixedZeroDebts.length ? "Keep 0% plans on schedule" : "Build your financial future"}</h3>
                 <p>
                   {availableToAssign < 0
                     ? `Your planned commitments are ${money(Math.abs(availableToAssign))} above income. Review the commitments or update expected pay before adding extra debt or savings payments.`
                     : priorityDebt
                       ? `${strategy === "avalanche" ? "Highest APR first saves the most interest." : "Smallest balance first creates the quickest win."} Every pound left after commitments is assigned below.`
-                      : "With no debts to overpay, direct the remaining money to your emergency fund and long-term goals."}
+                      : fixedZeroDebts.length
+                        ? "These debts are permanently interest-free. Keep paying their minimums and direct the remaining money to savings."
+                        : "With no debts to overpay, direct the remaining money to your emergency fund."}
                 </p>
               </div>
               <div className="recommendation-split">
                 <RecommendationLine icon={<ShieldCheck />} label="Emergency buffer" value={emergencyContribution} note={fullEmergencyTarget > 0 ? `${money(emergencySaved)} of ${money(fullEmergencyTarget)} target saved` : "Set after essential costs are entered"} />
-                {priorityDebt ? (
-                  <RecommendationLine icon={<Target />} label="Debt overpayment pot" value={debtOverpayment} note={`Starts with ${priorityDebt.name} · ${money(priorityDebt.balance)} balance · ${priorityDebt.apr.toFixed(1)}% APR${debtFreeDate ? ` · all debts forecast clear ${debtFreeDate}` : ""}`} />
-                ) : (
-                  <RecommendationLine icon={<Sparkles />} label="Savings and investing" value={futureContribution} note="After this month’s costs and safety buffer" />
+                {priorityDebt ? debtAllocations.map((allocation, index) => {
+                  const debt = debts.find((item) => item.id === allocation.id);
+                  return (
+                    <RecommendationLine
+                      key={allocation.id}
+                      icon={<Target />}
+                      label={`Extra to ${allocation.name}`}
+                      value={allocation.amount}
+                      note={`${index === 0 ? "Pay first" : "Remainder rolls here"} · ${money(debt?.balance || 0)} balance${debtFreeDate ? ` · all debts forecast clear ${debtFreeDate}` : ""}`}
+                    />
+                  );
+                }) : (
+                  <RecommendationLine icon={<Sparkles />} label="Additional savings" value={futureContribution} note={fixedZeroDebts.length ? "Permanent 0% plans remain on their minimum payments" : "After this month’s costs and safety buffer"} />
                 )}
               </div>
-              <small className="recommendation-note">Until one month of commitments is saved, the extra is split equally between your emergency buffer and priority debt. After that starter buffer, all extra targets the priority debt. Update the month whenever pay or bills change.</small>
+              <small className="recommendation-note">Until one month of commitments is saved, available money is split between your emergency buffer and eligible debts. Permanent 0% plans receive only their minimum payment. No debt is allocated more than its remaining balance.</small>
             </section>
           </div>
         </div>

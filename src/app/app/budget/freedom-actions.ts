@@ -37,6 +37,7 @@ export async function fetchFreedomData() {
       balance: debt.balancePence / 100,
       apr: debt.aprBasisPoints / 100,
       minimum: debt.minimumPence / 100,
+      promotionalEndDate: debt.promotionalEndDate?.toISOString().slice(0, 10) ?? "",
     })),
     goals: goals.map((goal) => ({
       id: goal.id,
@@ -81,6 +82,7 @@ export async function saveDebt(input: {
   balance: number;
   apr: number;
   minimum: number;
+  promotionalEndDate?: string;
 }) {
   const householdId = await getHouseholdIdOrThrow();
   const persistedId = input.id && !input.id.startsWith("new-") ? input.id : undefined;
@@ -89,6 +91,9 @@ export async function saveDebt(input: {
     balancePence: pence(input.balance),
     aprBasisPoints: Math.max(0, Math.round((Number(input.apr) || 0) * 100)),
     minimumPence: pence(input.minimum),
+    promotionalEndDate: input.promotionalEndDate
+      ? new Date(`${input.promotionalEndDate}T00:00:00.000Z`)
+      : null,
   };
 
   if (persistedId) {

@@ -22,6 +22,12 @@ import {
 import ModernMonthlyPlan from "./ModernMonthlyPlan";
 import { fetchBudgetRowsForMonth } from "@/app/app/budget/actions";
 import {
+  allocateDebtOverpayment,
+  canReceiveOverpayment,
+  orderDebts,
+  overpaymentCapacity,
+} from "@/lib/debt-plan";
+import {
   fetchFreedomData,
   removeDebt,
   saveDebt,
@@ -31,7 +37,7 @@ import {
 
 type View = "overview" | "plan" | "debt" | "savings";
 type Strategy = "avalanche" | "snowball";
-type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
+type Debt = { id: string; name: string; balance: number; apr: number; minimum: number; promotionalEndDate: string };
 type Goal = { id: string; name: string; target: number; saved: number; monthly: number; targetDate: string };
 type Profile = { strategy: Strategy; extraPayment: number; fireTarget: number; emergencyFundMonths: number };
 
@@ -78,9 +84,7 @@ function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
       remaining -= payment;
     }
 
-    const ordered = [...working].sort((a, b) =>
-      strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance
-    );
+    const ordered = orderDebts(working.filter(canReceiveOverpayment), strategy);
     for (const debt of ordered) {
       if (debt.balance <= 0 || remaining <= 0) continue;
       const payment = Math.min(debt.balance, remaining);
@@ -147,20 +151,29 @@ export default function FinanceHub() {
   }, [load]);
 
   const debtTotal = roundMoney(debts.reduce((sum, debt) => sum + debt.balance, 0));
+  const attackableDebtTotal = roundMoney(debts.filter(canReceiveOverpayment).reduce((sum, debt) => sum + debt.balance, 0));
   const debtMinimums = roundMoney(debts.reduce((sum, debt) => sum + debt.minimum, 0));
   const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
   const emergencySaved = emergencyGoal?.saved || 0;
   const extraAfterCommitments = roundMoney(Math.max(0, income - expenses - debtMinimums));
   const starterEmergencyTarget = roundMoney(expenses + debtMinimums);
   const fullEmergencyTarget = roundMoney(starterEmergencyTarget * Math.max(1, profile.emergencyFundMonths));
-  const suggestedSavings = emergencySaved < starterEmergencyTarget
+  const baseSuggestedSavings = emergencySaved < starterEmergencyTarget
     ? Math.min(
         roundMoney(starterEmergencyTarget - emergencySaved),
-        debtTotal > 0 ? Math.ceil(extraAfterCommitments * 100 / 2) / 100 : extraAfterCommitments
+        attackableDebtTotal > 0 ? Math.ceil(extraAfterCommitments * 100 / 2) / 100 : extraAfterCommitments
       )
-    : debtTotal === 0 ? extraAfterCommitments : 0;
-  const suggestedDebtExtra = debtTotal > 0 ? roundMoney(Math.max(0, extraAfterCommitments - suggestedSavings)) : 0;
+    : attackableDebtTotal === 0 ? extraAfterCommitments : 0;
+  const proposedDebtExtra = attackableDebtTotal > 0
+    ? roundMoney(Math.max(0, extraAfterCommitments - baseSuggestedSavings))
+    : 0;
+  const suggestedDebtExtra = roundMoney(Math.min(proposedDebtExtra, overpaymentCapacity(debts)));
+  const suggestedSavings = roundMoney(baseSuggestedSavings + proposedDebtExtra - suggestedDebtExtra);
   const shortfall = roundMoney(Math.max(0, expenses + debtMinimums - income));
+  const debtAllocations = React.useMemo(
+    () => allocateDebtOverpayment(debts, profile.strategy, suggestedDebtExtra).allocations,
+    [debts, profile.strategy, suggestedDebtExtra]
+  );
   const payoff = React.useMemo(
     () => calculatePayoff(debts, profile.strategy, suggestedDebtExtra),
     [debts, profile.strategy, suggestedDebtExtra]
@@ -250,6 +263,7 @@ export default function FinanceHub() {
           emergencySaved={emergencySaved}
           starterEmergencyTarget={starterEmergencyTarget}
           debtTotal={debtTotal}
+          attackableDebtTotal={attackableDebtTotal}
           payoffMonths={payoff.months}
           onNavigate={setView}
         />
@@ -275,6 +289,7 @@ export default function FinanceHub() {
           savingDebtId={savingDebtId}
           payoff={payoff}
           suggestedExtra={suggestedDebtExtra}
+          allocations={debtAllocations}
           onRemove={async (id) => {
             setDebts((items) => items.filter((item) => item.id !== id));
             if (!id.startsWith("new-")) await removeDebt(id);
@@ -315,12 +330,13 @@ function Overview(props: {
   emergencySaved: number;
   starterEmergencyTarget: number;
   debtTotal: number;
+  attackableDebtTotal: number;
   payoffMonths: number;
   onNavigate: (view: View) => void;
 }) {
   const {
     income, expenses, debtMinimums, suggestedSavings, suggestedDebtExtra, shortfall,
-    emergencySaved, starterEmergencyTarget, debtTotal, payoffMonths, onNavigate,
+    emergencySaved, starterEmergencyTarget, debtTotal, attackableDebtTotal, payoffMonths, onNavigate,
   } = props;
   const budgetHealth = income <= 0
     ? "Add your income to get started"
@@ -357,7 +373,13 @@ function Overview(props: {
         <MetricCard icon={<Banknote />} tone="mint" label="Expected income" value={money(income)} note="Both take-home pays" />
         <MetricCard icon={<CalendarDays />} tone="sand" label="Commitments" value={money(expenses + debtMinimums)} note={`${money(expenses)} bills · ${money(debtMinimums)} debt minimums`} />
         <MetricCard icon={<PiggyBank />} tone="blue" label="Save this month" value={money(suggestedSavings)} note={`${money(emergencySaved)} currently in your emergency fund`} />
-        <MetricCard icon={<CreditCard />} tone="lavender" label="Debt overpayment" value={money(suggestedDebtExtra)} note={debtTotal > 0 ? `${money(debtTotal)} total debt remaining` : "No debt balance entered"} />
+        <MetricCard
+          icon={<CreditCard />}
+          tone="lavender"
+          label="Debt overpayment"
+          value={money(suggestedDebtExtra)}
+          note={attackableDebtTotal > 0 ? `${money(attackableDebtTotal)} eligible for overpayments` : debtTotal > 0 ? "Fixed 0% plans stay on minimums" : "No debt balance entered"}
+        />
       </section>
 
       <section className="overview-grid">
@@ -374,8 +396,8 @@ function Overview(props: {
           />
           <ActionRow
             done={debtTotal === 0}
-            title={debtTotal > 0 ? "Check the priority debt" : "Add your debt balances"}
-            detail={debtTotal > 0 ? `${money(suggestedDebtExtra)} extra this month · projected ${formatMonths(payoffMonths)}` : "Add balances, minimums and APR where known."}
+            title={attackableDebtTotal > 0 ? "Check the priority debt" : debtTotal > 0 ? "Keep fixed 0% plans on schedule" : "Add your debt balances"}
+            detail={attackableDebtTotal > 0 ? `${money(suggestedDebtExtra)} extra this month · projected ${formatMonths(payoffMonths)}` : debtTotal > 0 ? "Minimum payments only; no overpayments are assigned." : "Add balances, minimums and APR where known."}
             onClick={() => onNavigate("debt")}
           />
           <ActionRow
@@ -438,11 +460,12 @@ function FlowRow({ label, value, total, color }: { label: string; value: number;
   );
 }
 
-function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, savingDebtId, payoff, suggestedExtra, onRemove }: {
+function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, savingDebtId, payoff, suggestedExtra, allocations, onRemove }: {
   debts: Debt[]; setDebts: React.Dispatch<React.SetStateAction<Debt[]>>; profile: Profile;
   updateProfile: (patch: Partial<Profile>) => Promise<void>; persistDebt: (debt: Debt) => Promise<void>;
   savingDebtId: string | null;
   payoff: ReturnType<typeof calculatePayoff>; suggestedExtra: number; onRemove: (id: string) => Promise<void>;
+  allocations: Array<{ id: string; name: string; amount: number }>;
 }) {
   const total = debts.reduce((sum, debt) => sum + debt.balance, 0);
   const update = (id: string, patch: Partial<Debt>) =>
@@ -452,7 +475,7 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, sav
     <div className="debt-layout">
       <section className="finance-panel debt-summary">
         <div className="section-heading">
-          <div><span className="section-kicker">Your exit plan</span><h2>Pay one debt down with purpose</h2><p>Enter each balance, minimum and APR. The monthly plan supplies the affordable extra payment automatically.</p></div>
+          <div><span className="section-kicker">Your exit plan</span><h2>Pay debts down with purpose</h2><p>Enter each balance, minimum and APR. Add an end date only for a temporary 0% deal; permanent 0% plans stay on minimum payments.</p></div>
         </div>
         <div className="debt-kpis">
           <div><span>Total remaining</span><strong>{money(total)}</strong></div>
@@ -474,28 +497,45 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, sav
               <button className={profile.strategy === "avalanche" ? "active" : ""} onClick={() => updateProfile({ strategy: "avalanche" })}>Avalanche</button>
               <button className={profile.strategy === "snowball" ? "active" : ""} onClick={() => updateProfile({ strategy: "snowball" })}>Snowball</button>
             </div>
-            <p>{profile.strategy === "avalanche" ? "Highest APR first — usually saves the most interest." : "Smallest balance first — creates faster psychological wins."}</p>
+            <p>{profile.strategy === "avalanche" ? "Highest APR first — usually saves the most interest." : "Smallest eligible balance first — fixed 0% plans stay on minimum payments."}</p>
           </div>
           <div className="recommended-extra"><span>From this month&apos;s plan</span><strong>{money(suggestedExtra)}</strong><small>extra after commitments and emergency saving</small></div>
         </div>
+        {allocations.length > 0 && (
+          <div className="debt-allocation">
+            <span className="section-kicker">This month&apos;s overpayment split</span>
+            {allocations.map((allocation, index) => (
+              <div key={allocation.id}>
+                <span>{index + 1}. {allocation.name}</span>
+                <strong>{money(allocation.amount)}</strong>
+              </div>
+            ))}
+            <small>Each debt receives only what it needs after its minimum payment; any remainder rolls to the next eligible debt.</small>
+          </div>
+        )}
       </section>
 
       <section className="finance-panel">
         <div className="panel-title-row">
-          <div><span className="section-kicker">Household debts</span><h3>Add balances and APRs when known</h3></div>
-          <button className="soft-button" onClick={() => setDebts((items) => [...items, { id: `new-${Date.now()}`, name: "New debt", balance: 0, apr: 0, minimum: 0 }])}><Plus size={16} /> Add debt</button>
+          <div><span className="section-kicker">Household debts</span><h3>Balances, rates and minimum payments</h3></div>
+          <button className="soft-button" onClick={() => setDebts((items) => [...items, { id: `new-${Date.now()}`, name: "New debt", balance: 0, apr: 0, minimum: 0, promotionalEndDate: "" }])}><Plus size={16} /> Add debt</button>
         </div>
         {debts.length === 0 ? (
           <EmptyState icon={<Landmark />} title="No debts added" text="If you’re already debt free, brilliant. Otherwise add each balance to build your plan." />
         ) : (
           <div className="debt-list">
-            {[...debts].sort((a, b) => profile.strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance).map((debt, index) => (
-              <article className="editable-row" key={debt.id}>
+            {orderDebts(debts, profile.strategy).map((debt, index) => (
+              <article className={`editable-row ${canReceiveOverpayment(debt) ? "" : "fixed-zero"}`} key={debt.id}>
                 <div className="row-order">{index + 1}</div>
                 <label><span>Name</span><input value={debt.name} onChange={(e) => update(debt.id, { name: e.target.value })} /></label>
                 <MoneyInput label="Balance" value={debt.balance} onChange={(balance) => update(debt.id, { balance })} />
                 <label><span>APR</span><div className="suffix-input"><input type="number" min="0" step=".01" value={debt.apr} onChange={(e) => update(debt.id, { apr: number(e.target.value) })} /><b>%</b></div></label>
                 <MoneyInput label="Minimum" value={debt.minimum} onChange={(minimum) => update(debt.id, { minimum })} />
+                <label className="promo-date-field">
+                  <span>0% ends (optional)</span>
+                  <input type="date" value={debt.promotionalEndDate} onChange={(event) => update(debt.id, { promotionalEndDate: event.target.value })} />
+                  {debt.apr === 0 && !debt.promotionalEndDate && <small>Minimum only</small>}
+                </label>
                 <button className="soft-button debt-save-button" disabled={Boolean(savingDebtId)} onClick={() => persistDebt(debt)}>
                   {savingDebtId === debt.id ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
                   {savingDebtId === debt.id ? "Saving" : "Save"}

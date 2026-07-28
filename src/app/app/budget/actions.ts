@@ -10,6 +10,7 @@ export type Row = {
   id?: string;
   label: string;
   amount: number;
+  usualAmount?: number;
   owner?: Owner;
   recurrence?: RecurrenceUI;
   expectedDay?: number | null;
@@ -127,6 +128,7 @@ export async function fetchBudgetRowsForMonth(
     id: l.id,
     label: l.label,
     amount: fromPence(l.overrides[0]?.amountPence ?? l.defaultAmountPence ?? 0),
+    usualAmount: fromPence(l.defaultAmountPence ?? 0),
     owner: l.owner as Owner,
     recurrence: "recurring",
     expectedDay: l.expectedDay,
@@ -411,18 +413,17 @@ export async function upsertBudgetRowScoped(
       select: { amountPence: true },
     });
 
-    const amountForMonth =
-      ov?.amountPence ??
-      (await tx.budgetLine.findUnique({
-        where: { id: line.id },
-        select: { defaultAmountPence: true },
-      }))?.defaultAmountPence ??
-      0;
+    const savedLine = await tx.budgetLine.findUnique({
+      where: { id: line.id },
+      select: { defaultAmountPence: true },
+    });
+    const amountForMonth = ov?.amountPence ?? savedLine?.defaultAmountPence ?? 0;
 
     return {
       id: line.id,
       label: line.label,
       amount: fromPence(amountForMonth),
+      usualAmount: fromPence(savedLine?.defaultAmountPence ?? 0),
       owner: line.owner as Owner,
       recurrence: "recurring" as const,    // 👈 fix
       expectedDay: line.expectedDay,
