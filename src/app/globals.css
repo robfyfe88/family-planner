@@ -1303,6 +1303,14 @@ input[type="text"].no-spinners {
 .payday-routine strong { font-size: .68rem; }
 .payday-routine small { margin-top: .12rem; color: #71817b; font-size: .58rem; line-height: 1.4; }
 .payday-routine .soft-button { flex: none; }
+.forecast-position { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; margin-bottom: .7rem; }
+.forecast-position > span { min-width: 0; padding: .7rem .75rem; border: 1px solid #dce5df; border-radius: .75rem; background: #f7faf7; }
+.forecast-position small,
+.forecast-position strong,
+.forecast-position em { display: block; }
+.forecast-position small { color: #71817b; font-size: .56rem; }
+.forecast-position strong { margin-top: .12rem; color: var(--money-ink); font-size: .95rem; }
+.forecast-position em { margin-top: .08rem; color: #84908c; font-size: .52rem; font-style: normal; }
 .plan-layout { display: grid; grid-template-columns: 1fr minmax(230px, .33fr); gap: .7rem; }
 .category-plan-list { overflow: hidden; border: 1px solid #e6e4dc; border-radius: .8rem; }
 .category-plan-row { display: grid; grid-template-columns: auto 1fr minmax(130px, .35fr); align-items: center; gap: .65rem; min-height: 61px; padding: .55rem .7rem; border-top: 1px solid #eceae3; background: #fff; }
@@ -1430,6 +1438,7 @@ input[type="text"].no-spinners {
   .recommendation-split { grid-template-columns: 1fr; }
   .payday-routine { align-items: stretch; flex-direction: column; }
   .payday-routine .soft-button { width: 100%; }
+  .forecast-position { grid-template-columns: 1fr; }
   .rule-builder { grid-template-columns: 1fr; }
   .rules-list article { grid-template-columns: 1fr auto; }
   .rules-list article > svg { display: none; }

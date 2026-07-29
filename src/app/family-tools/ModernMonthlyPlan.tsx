@@ -65,6 +65,8 @@ type ModernMonthlyPlanProps = {
   goals?: Goal[];
   strategy?: "avalanche" | "snowball";
   emergencyFundMonths?: number;
+  forecastDebtExtra?: number;
+  forecastSavingsContribution?: number;
   onFinanceChanged?: () => void;
 };
 
@@ -162,11 +164,47 @@ function estimateDebtFreeMonths(
   return months;
 }
 
+function projectDebtsForward(
+  debts: Debt[],
+  strategy: "avalanche" | "snowball",
+  monthlyExtra: number,
+  months: number
+) {
+  const working = debts.map((debt) => ({ ...debt }));
+  for (let month = 0; month < months; month += 1) {
+    working.forEach((debt) => {
+      if (debt.balance <= 0) return;
+      debt.balance = roundMoney(debt.balance + debt.balance * (debt.apr / 100 / 12));
+      debt.balance = roundMoney(Math.max(0, debt.balance - Math.min(debt.balance, debt.minimum)));
+    });
+
+    let remainingExtra = Math.max(0, monthlyExtra);
+    const ordered = orderDebts(
+      working.filter((debt) => debt.balance > 0 && canReceiveOverpayment(debt)),
+      strategy
+    );
+    ordered.forEach((debt) => {
+      if (remainingExtra <= 0) return;
+      const payment = Math.min(debt.balance, remainingExtra);
+      debt.balance = roundMoney(Math.max(0, debt.balance - payment));
+      remainingExtra = roundMoney(remainingExtra - payment);
+    });
+  }
+
+  return working.map((debt) => ({
+    ...debt,
+    balance: roundMoney(debt.balance),
+    minimum: roundMoney(Math.min(debt.minimum, debt.balance)),
+  }));
+}
+
 export default function ModernMonthlyPlan({
   debts = [],
   goals = [],
   strategy = "avalanche",
   emergencyFundMonths = 3,
+  forecastDebtExtra = 0,
+  forecastSavingsContribution = 0,
   onFinanceChanged,
 }: ModernMonthlyPlanProps) {
   const now = new Date();
@@ -295,7 +333,14 @@ export default function ModernMonthlyPlan({
     }))
     .sort((a, b) => b.spent - a.spent || a.name.localeCompare(b.name));
 
-  const debtMinimums = roundMoney(debts.reduce((sum, debt) => sum + debt.minimum, 0));
+  const currentPayMonthIndex = now.getFullYear() * 12 + now.getMonth();
+  const selectedPayMonthIndex = cursor.year * 12 + cursor.month - 1;
+  const forecastSteps = Math.max(0, selectedPayMonthIndex - currentPayMonthIndex);
+  const projectedDebts = projectDebtsForward(debts, strategy, forecastDebtExtra, forecastSteps);
+  const activeProjectedDebts = projectedDebts.filter((debt) => debt.balance > 0);
+  const projectedDebtTotal = roundMoney(activeProjectedDebts.reduce((sum, debt) => sum + debt.balance, 0));
+  const currentDebtTotal = roundMoney(debts.reduce((sum, debt) => sum + debt.balance, 0));
+  const debtMinimums = roundMoney(activeProjectedDebts.reduce((sum, debt) => sum + debt.minimum, 0));
   const regularCommitmentTotal = roundMoney(committedBills.reduce((sum, item) => sum + item.amount, 0));
   const unforeseenTopUp = roundMoney(Math.max(0, unforeseenBuffer.target - unforeseenBuffer.balance));
   const flexAllowanceTotal = roundMoney(
@@ -304,16 +349,16 @@ export default function ModernMonthlyPlan({
   const coreOutgoings = roundMoney(plannedExpenses + debtMinimums);
   const availableToAssign = roundMoney(plannedIncome - coreOutgoings);
   const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
-  const emergencySaved = emergencyGoal?.saved || 0;
+  const emergencySaved = roundMoney((emergencyGoal?.saved || 0) + forecastSavingsContribution * forecastSteps);
   const oneMonthBuffer = Math.max(0, coreOutgoings);
   const fullEmergencyTarget = oneMonthBuffer * Math.max(1, emergencyFundMonths);
   const needsStarterBuffer = emergencySaved < oneMonthBuffer;
   const orderedDebts = orderDebts(
-    debts.filter((debt) => debt.balance > debt.minimum && canReceiveOverpayment(debt)),
+    activeProjectedDebts.filter((debt) => debt.balance > debt.minimum && canReceiveOverpayment(debt)),
     strategy
   );
   const priorityDebt = orderedDebts[0];
-  const fixedZeroDebts = debts.filter((debt) => debt.balance > 0 && !canReceiveOverpayment(debt));
+  const fixedZeroDebts = activeProjectedDebts.filter((debt) => !canReceiveOverpayment(debt));
   const positiveAvailable = Math.max(0, availableToAssign);
   const baseEmergencyContribution = needsStarterBuffer && positiveAvailable > 0
     ? Math.min(
@@ -322,11 +367,11 @@ export default function ModernMonthlyPlan({
       )
     : 0;
   const proposedDebtOverpayment = priorityDebt ? roundMoney(Math.max(0, positiveAvailable - baseEmergencyContribution)) : 0;
-  const debtOverpayment = roundMoney(Math.min(proposedDebtOverpayment, overpaymentCapacity(debts)));
+  const debtOverpayment = roundMoney(Math.min(proposedDebtOverpayment, overpaymentCapacity(activeProjectedDebts)));
   const emergencyContribution = roundMoney(baseEmergencyContribution + proposedDebtOverpayment - debtOverpayment);
   const futureContribution = priorityDebt ? 0 : roundMoney(Math.max(0, positiveAvailable - emergencyContribution));
-  const debtAllocations = allocateDebtOverpayment(debts, strategy, debtOverpayment).allocations;
-  const debtFreeMonths = estimateDebtFreeMonths(debts, strategy, debtOverpayment);
+  const debtAllocations = allocateDebtOverpayment(activeProjectedDebts, strategy, debtOverpayment).allocations;
+  const debtFreeMonths = estimateDebtFreeMonths(activeProjectedDebts, strategy, debtOverpayment);
   const debtFreeDate = debtFreeMonths > 0 && debtFreeMonths < 600
     ? new Date(Date.UTC(cursor.year, cursor.month - 1 + debtFreeMonths, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric" })
     : "";
@@ -532,7 +577,7 @@ export default function ModernMonthlyPlan({
           <button onClick={() => moveMonth(1)} aria-label="Next month"><ChevronRight /></button>
         </div>
         <button className="soft-button forecast-button" onClick={() => { setCursor(nextCursor); setView("plan"); }}>
-          Next pay period
+          See next pay-cycle forecast
         </button>
         <button className="icon-button" onClick={() => load(true)} aria-label="Refresh month">
           <RefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
@@ -631,8 +676,15 @@ export default function ModernMonthlyPlan({
           </div>
           <div className="payday-routine">
             <div><CalendarDays /><span><strong>Your once-a-month pay check-in</strong><small>1. Confirm both pays &nbsp; 2. Cover next month&apos;s commitments &nbsp; 3. Allow for real life &nbsp; 4. Save and reduce debt</small></span></div>
-            <button className="soft-button" onClick={() => { setCursor(nextCursor); setView("plan"); }}>Plan the next pay cycle</button>
+            <button className="soft-button" onClick={() => { setCursor(nextCursor); setView("plan"); }}>See next pay-cycle forecast</button>
           </div>
+          {forecastSteps > 0 && (
+            <div className="forecast-position">
+              <span><small>Projected debt remaining</small><strong>{money(projectedDebtTotal)}</strong><em>{money(Math.max(0, currentDebtTotal - projectedDebtTotal))} lower than today</em></span>
+              <span><small>Projected emergency savings</small><strong>{money(emergencySaved)}</strong><em>After earlier planned contributions</em></span>
+              <span><small>Debt minimums this cycle</small><strong>{money(debtMinimums)}</strong><em>Cleared debts automatically drop out</em></span>
+            </div>
+          )}
           <div className="money-order">
             <section className="order-card income-order">
               <div className="order-number">1</div>
@@ -670,7 +722,10 @@ export default function ModernMonthlyPlan({
               <div className="order-heading">
                 <span className="section-kicker">Cover commitments</span>
                 <h3>{money(regularCommitmentTotal + debtMinimums)}</h3>
-                <p>Your {fundedPlanMonth} bills plus the minimum payments from Debt freedom.</p>
+                <p>
+                  Your {fundedPlanMonth} bills plus the minimum payments from Debt freedom.
+                  {forecastSteps > 0 && ` Debt balances reflect ${forecastSteps} previous ${forecastSteps === 1 ? "pay cycle" : "pay cycles"} of planned payments.`}
+                </p>
               </div>
               <button className="soft-button" onClick={() => setModal("commitment")}><Plus size={15} /> Add commitment</button>
               <div className="commitment-editor">
@@ -701,7 +756,7 @@ export default function ModernMonthlyPlan({
                           <label><span>Monthly amount</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onFocus={selectNumericValue} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} onBlur={() => persistCommitment(bill)} /></div></label>
                           <button className="icon-button danger" aria-label={`Remove ${bill.label}`} onClick={async () => {
                             if (!bill.id) return;
-                            await deleteBudgetRowScoped(bill.id, "entire-range", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
+                            await deleteBudgetRowScoped(bill.id, "from-now-on", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
                             setCommittedBills((items) => items.filter((item) => item.id !== bill.id));
                             setPlannedExpenses((value) => Math.max(0, value - bill.amount));
                             onFinanceChanged?.();
@@ -727,11 +782,11 @@ export default function ModernMonthlyPlan({
                   <details className="commitment-group debt-total">
                     <summary>
                       <span className="commitment-group-icon"><ChevronRight size={15} /></span>
-                      <span><b>Debt minimum payments</b><small>{debts.length} {debts.length === 1 ? "debt" : "debts"} · managed in Debt freedom</small></span>
+                      <span><b>Debt minimum payments</b><small>{activeProjectedDebts.length} {activeProjectedDebts.length === 1 ? "debt" : "debts"} · {forecastSteps > 0 ? "projected after earlier payments" : "managed in Debt freedom"}</small></span>
                       <strong>{money(debtMinimums)}</strong>
                     </summary>
                     <div className="commitment-group-body">
-                      {debts.map((debt) => <article className="commitment-static" key={debt.id}><span><b>{debt.name}</b><small>Minimum payment</small></span><strong>{money(debt.minimum)}</strong></article>)}
+                      {activeProjectedDebts.map((debt) => <article className="commitment-static" key={debt.id}><span><b>{debt.name}</b><small>{money(debt.balance)} projected balance</small></span><strong>{money(debt.minimum)}</strong></article>)}
                     </div>
                   </details>
                 )}
@@ -792,7 +847,7 @@ export default function ModernMonthlyPlan({
               <div className="recommendation-split">
                 <RecommendationLine icon={<ShieldCheck />} label="Emergency buffer" value={emergencyContribution} note={fullEmergencyTarget > 0 ? `${money(emergencySaved)} of ${money(fullEmergencyTarget)} target saved` : "Set after essential costs are entered"} />
                 {priorityDebt ? debtAllocations.map((allocation, index) => {
-                  const debt = debts.find((item) => item.id === allocation.id);
+                  const debt = activeProjectedDebts.find((item) => item.id === allocation.id);
                   return (
                     <RecommendationLine
                       key={allocation.id}
@@ -934,6 +989,7 @@ function CommitmentModal({ year, month, onClose, onSaved }: {
   const [label, setLabel] = React.useState("");
   const [amount, setAmount] = React.useState("");
   const [categoryName, setCategoryName] = React.useState<typeof COMMITMENT_CATEGORIES[number]>("Home & household");
+  const [scope, setScope] = React.useState<Extract<Scope, "this-month" | "from-now-on">>("from-now-on");
   const [saving, setSaving] = React.useState(false);
   const debtLike = /\b(credit\s*card|loan)\b/i.test(label);
 
@@ -949,7 +1005,7 @@ function CommitmentModal({ year, month, onClose, onSaved }: {
         owner: "joint",
         year,
         month1to12: month,
-        scope: "from-now-on",
+        scope,
         categoryName,
       });
       onSaved(result.kind);
@@ -957,6 +1013,7 @@ function CommitmentModal({ year, month, onClose, onSaved }: {
       <label className="wide"><span>Commitment name</span><input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. Mortgage, Council tax, Octopus Energy" /></label>
       <label><span>Monthly amount</span><div className="currency-input">£<input type="number" required min="0.01" step=".01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div></label>
       <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value as typeof COMMITMENT_CATEGORIES[number])}>{COMMITMENT_CATEGORIES.map((category) => <option value={category} key={category}>{category}</option>)}</select></label>
+      <label className="wide"><span>How long does this apply?</span><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="from-now-on">{MONTHS[month - 1]} and future funded months</option><option value="this-month">Only {MONTHS[month - 1]}</option></select></label>
       <button className="primary-button wide" disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : debtLike ? <CreditCard size={16} /> : <Plus size={16} />} {debtLike ? "Add to Debt freedom" : "Save commitment"}</button>
     </form>
   </ModalFrame>;

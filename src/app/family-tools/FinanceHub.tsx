@@ -297,6 +297,8 @@ export default function FinanceHub() {
           goals={goals}
           strategy={profile.strategy}
           emergencyFundMonths={profile.emergencyFundMonths}
+          forecastDebtExtra={suggestedDebtExtra}
+          forecastSavingsContribution={suggestedSavings}
           onFinanceChanged={() => load(true)}
         />
       )}

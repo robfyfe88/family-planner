@@ -128,16 +128,19 @@ export async function fetchBudgetRowsForMonth(
     orderBy: [{ label: "asc" }],
   });
 
-  const toRow = (l: (typeof lines)[number]): Row => ({
-    id: l.id,
-    label: l.label,
-    amount: fromPence(l.overrides[0]?.amountPence ?? l.defaultAmountPence ?? 0),
-    usualAmount: fromPence(l.defaultAmountPence ?? 0),
-    categoryName: l.category?.name,
-    owner: l.owner as Owner,
-    recurrence: "recurring",
-    expectedDay: l.expectedDay,
-  });
+  const toRow = (l: (typeof lines)[number]): Row => {
+    const isOneOff = l.defaultAmountPence === 0 && Boolean(l.overrides[0]);
+    return {
+      id: l.id,
+      label: l.label,
+      amount: fromPence(l.overrides[0]?.amountPence ?? l.defaultAmountPence ?? 0),
+      usualAmount: fromPence(l.defaultAmountPence ?? 0),
+      categoryName: l.category?.name,
+      owner: l.owner as Owner,
+      recurrence: isOneOff ? "oneoff" : "recurring",
+      expectedDay: l.expectedDay,
+    };
+  };
 
   const baseIncomes: Row[] = lines
     .filter((l) => l.flow === "income")
@@ -315,6 +318,7 @@ export async function upsertBudgetRowScoped(
   const label = normalizeLabel(payload.label);
   const owner = (payload.owner ?? "joint") as Owner;
   const defaultAmountPence = toPence(payload.amount);
+  const initialDefaultAmountPence = payload.scope === "this-month" ? 0 : defaultAmountPence;
   const effFrom = monthStart(payload.year, payload.month1to12);
 
   return prisma.$transaction(async (tx: any) => {
@@ -362,8 +366,10 @@ export async function upsertBudgetRowScoped(
           owner,
           recurrence: "monthly",
           effectiveFrom: effFrom,
-          effectiveTo: null,
-          defaultAmountPence,
+          effectiveTo: payload.scope === "this-month"
+            ? monthEnd(payload.year, payload.month1to12)
+            : null,
+          defaultAmountPence: initialDefaultAmountPence,
           expectedDay: payload.expectedDay ?? null,
           categoryId: category?.id,
         },
@@ -448,6 +454,7 @@ export async function upsertBudgetRowScoped(
       },
     });
     const amountForMonth = ov?.amountPence ?? savedLine?.defaultAmountPence ?? 0;
+    const isOneOff = (savedLine?.defaultAmountPence ?? 0) === 0 && Boolean(ov);
 
     return {
       id: line.id,
@@ -456,7 +463,7 @@ export async function upsertBudgetRowScoped(
       usualAmount: fromPence(savedLine?.defaultAmountPence ?? 0),
       categoryName: savedLine?.category?.name,
       owner: line.owner as Owner,
-      recurrence: "recurring" as const,    // 👈 fix
+      recurrence: isOneOff ? "oneoff" as const : "recurring" as const,
       expectedDay: line.expectedDay,
     };
   });
