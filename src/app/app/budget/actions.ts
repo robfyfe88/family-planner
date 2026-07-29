@@ -11,6 +11,7 @@ export type Row = {
   label: string;
   amount: number;
   usualAmount?: number;
+  categoryName?: string;
   owner?: Owner;
   recurrence?: RecurrenceUI;
   expectedDay?: number | null;
@@ -116,6 +117,9 @@ export async function fetchBudgetRowsForMonth(
       OR: [{ effectiveTo: null }, { effectiveTo: { gte: targetStart } }],
     },
     include: {
+      category: {
+        select: { name: true },
+      },
       overrides: {
         where: { year, month: month1to12 },
         select: { amountPence: true },
@@ -129,6 +133,7 @@ export async function fetchBudgetRowsForMonth(
     label: l.label,
     amount: fromPence(l.overrides[0]?.amountPence ?? l.defaultAmountPence ?? 0),
     usualAmount: fromPence(l.defaultAmountPence ?? 0),
+    categoryName: l.category?.name,
     owner: l.owner as Owner,
     recurrence: "recurring",
     expectedDay: l.expectedDay,
@@ -303,6 +308,7 @@ export async function upsertBudgetRowScoped(
     month1to12: number;
     scope: Scope;
     expectedDay?: number | null;
+    categoryName?: string;
   }
 ): Promise<Row> {
   const householdId = await getHouseholdIdOrThrow();
@@ -312,6 +318,24 @@ export async function upsertBudgetRowScoped(
   const effFrom = monthStart(payload.year, payload.month1to12);
 
   return prisma.$transaction(async (tx: any) => {
+    const categoryName = payload.categoryName ? normalizeLabel(payload.categoryName) : "";
+    const category = categoryName
+      ? await tx.budgetCategory.upsert({
+        where: { householdId_name: { householdId, name: categoryName } },
+        update: {
+          flow,
+          isSpending: flow === "expense",
+          ...(flow === "expense" ? { group: "Commitments" } : {}),
+        },
+        create: {
+          householdId,
+          name: categoryName,
+          flow,
+          isSpending: flow === "expense",
+          group: flow === "expense" ? "Commitments" : null,
+        },
+      })
+      : null;
     let line =
       payload.id
         ? await tx.budgetLine.findFirst({
@@ -341,6 +365,7 @@ export async function upsertBudgetRowScoped(
           effectiveTo: null,
           defaultAmountPence,
           expectedDay: payload.expectedDay ?? null,
+          categoryId: category?.id,
         },
       });
     } else {
@@ -348,6 +373,7 @@ export async function upsertBudgetRowScoped(
         line.label !== label ||
         line.flow !== flow ||
         (line.owner as Owner) !== owner ||
+        (category && line.categoryId !== category.id) ||
         (payload.expectedDay !== undefined && line.expectedDay !== payload.expectedDay)
       ) {
         line = await tx.budgetLine.update({
@@ -356,6 +382,7 @@ export async function upsertBudgetRowScoped(
             label,
             flow,
             owner,
+            ...(category ? { categoryId: category.id } : {}),
             ...(payload.expectedDay !== undefined ? { expectedDay: payload.expectedDay } : {}),
           },
         });
@@ -415,7 +442,10 @@ export async function upsertBudgetRowScoped(
 
     const savedLine = await tx.budgetLine.findUnique({
       where: { id: line.id },
-      select: { defaultAmountPence: true },
+      select: {
+        defaultAmountPence: true,
+        category: { select: { name: true } },
+      },
     });
     const amountForMonth = ov?.amountPence ?? savedLine?.defaultAmountPence ?? 0;
 
@@ -424,6 +454,7 @@ export async function upsertBudgetRowScoped(
       label: line.label,
       amount: fromPence(amountForMonth),
       usualAmount: fromPence(savedLine?.defaultAmountPence ?? 0),
+      categoryName: savedLine?.category?.name,
       owner: line.owner as Owner,
       recurrence: "recurring" as const,    // 👈 fix
       expectedDay: line.expectedDay,
@@ -440,6 +471,7 @@ export async function saveCommitment(payload: {
   month1to12: number;
   scope: Scope;
   expectedDay?: number | null;
+  categoryName?: string;
 }) {
   const householdId = await getHouseholdIdOrThrow();
   const label = normalizeLabel(payload.label);

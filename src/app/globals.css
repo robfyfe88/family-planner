@@ -1225,7 +1225,7 @@ input[type="text"].no-spinners {
   background: #f7faf7;
 }
 .income-editor > article > *,
-.commitment-editor > article > *,
+.commitment-group-body > article > *,
 .flex-allowance-editor article > * { min-width: 0; }
 .income-editor label > span { display: block; margin-bottom: .2rem; color: #74827d; font-size: .54rem; font-weight: 650; }
 .income-editor label > input { width: 100%; height: 36px; padding: 0 .45rem; border: 1px solid #dfe1da; border-radius: .5rem; background: #fff; font-size: .66rem; }
@@ -1233,9 +1233,23 @@ input[type="text"].no-spinners {
 .income-editor .icon-button { width: 36px; height: 36px; }
 .income-save-button { justify-content: center; height: 36px; white-space: nowrap; }
 .commitment-editor { display: grid; gap: .45rem; margin-top: .8rem; }
-.commitment-editor > article { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(135px, .3fr) auto; align-items: end; gap: .45rem; padding: .6rem; border: 1px solid #e7e5dd; border-radius: .7rem; background: #fafaf6; }
+.commitment-group { overflow: hidden; border: 1px solid #e7e5dd; border-radius: .75rem; background: #fafaf6; }
+.commitment-group > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .6rem; min-height: 58px; padding: .65rem .75rem; cursor: pointer; list-style: none; }
+.commitment-group > summary::-webkit-details-marker { display: none; }
+.commitment-group > summary:hover { background: #f5f7f2; }
+.commitment-group > summary > span b,
+.commitment-group > summary > span small { display: block; }
+.commitment-group > summary > span b { font-size: .69rem; }
+.commitment-group > summary > span small { margin-top: .1rem; color: #84908c; font-size: .54rem; }
+.commitment-group > summary > strong { color: var(--money-ink); font-size: .76rem; font-variant-numeric: tabular-nums; }
+.commitment-group-icon { display: grid; width: 28px; height: 28px; place-items: center; border-radius: .5rem; color: var(--money-mint-dark); background: #e5f0e9; }
+.commitment-group-icon svg { transition: transform .18s ease; }
+.commitment-group[open] .commitment-group-icon svg { transform: rotate(90deg); }
+.commitment-group-body { display: grid; gap: .4rem; padding: .5rem; border-top: 1px solid #ebe9e2; background: #fff; }
+.commitment-group-body > article { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, .45fr) minmax(130px, .3fr) auto; align-items: end; gap: .45rem; padding: .6rem; border: 1px solid #eceae3; border-radius: .65rem; background: #fafaf6; }
 .commitment-editor label > span { display: block; margin-bottom: .2rem; color: #7b8884; font-size: .54rem; font-weight: 650; }
-.commitment-editor label > input { width: 100%; height: 36px; padding: 0 .45rem; border: 1px solid #dfe1da; border-radius: .5rem; background: #fff; font-size: .66rem; }
+.commitment-editor label > input,
+.commitment-editor label > select { width: 100%; height: 36px; padding: 0 .45rem; border: 1px solid #dfe1da; border-radius: .5rem; background: #fff; font-size: .66rem; }
 .commitment-editor .currency-input { height: 36px; background: #fff; }
 .commitment-editor .icon-button { width: 36px; height: 36px; }
 .commitment-editor .commitment-static { display: flex; align-items: center; justify-content: space-between; }
@@ -1245,7 +1259,9 @@ input[type="text"].no-spinners {
 .commitment-static b { font-size: .67rem; }
 .commitment-static small { margin-top: .1rem; color: #84908c; font-size: .54rem; }
 .commitment-static strong { font-size: .72rem; }
-.commitment-static.debt-total { border-color: #dfd5ea; background: #f7f3fa; }
+.commitment-group.activity-total { border-color: #dbe7de; background: #f7faf7; }
+.commitment-group.debt-total { border-color: #dfd5ea; background: #f7f3fa; }
+.commitment-group.debt-total .commitment-group-icon { color: #6f548c; background: #ece5f3; }
 .flex-order { grid-column: auto; }
 .flex-allowance-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; margin-top: .8rem; }
 .flex-allowance-editor article { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(125px, .35fr) minmax(125px, .35fr) auto; align-items: end; gap: .5rem; padding: .7rem; border: 1px solid #e7dfd2; border-radius: .75rem; background: #fcfaf5; }
@@ -1399,9 +1415,8 @@ input[type="text"].no-spinners {
   .order-card > .soft-button { top: .8rem; right: .8rem; }
   .order-heading { padding-right: 0; }
   .order-card:has(> .soft-button) .order-heading { padding-right: 6.5rem; }
-  .commitment-editor > article { grid-template-columns: minmax(0, 1fr); position: relative; padding-top: 2.65rem; }
-  .commitment-editor > article label:first-child { grid-column: 1 / -1; }
-  .commitment-editor > article .icon-button { position: absolute; top: .55rem; right: .55rem; }
+  .commitment-group-body > article { grid-template-columns: minmax(0, 1fr); position: relative; padding-top: 2.65rem; }
+  .commitment-group-body > article .icon-button { position: absolute; top: .55rem; right: .55rem; }
   .commitment-editor .commitment-static { display: flex; }
   .income-editor > article { grid-template-columns: minmax(0, 1fr); position: relative; padding-top: 2.65rem; }
   .income-editor > article label:first-child { grid-column: 1 / -1; }

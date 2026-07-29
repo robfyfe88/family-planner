@@ -92,6 +92,27 @@ const FLEX_ALLOWANCES = [
   },
 ] as const;
 
+const COMMITMENT_CATEGORIES = [
+  "Home & household",
+  "Food & essentials",
+  "Family & childcare",
+  "Transport",
+  "Subscriptions",
+  "Personal spending",
+  "Other commitments",
+] as const;
+
+const guessCommitmentCategory = (label: string) => {
+  const value = label.trim().toLowerCase();
+  if (/(mortgage|council tax|energy|octopus|boiler|insurance|ageas|water|virgin|broadband|mobile|phone)/.test(value)) return "Home & household";
+  if (/(grocer|food|aldi|lidl|tesco|asda|sainsbury)/.test(value)) return "Food & essentials";
+  if (/(child|school|nursery|maintenance|laura|club|lesson)/.test(value)) return "Family & childcare";
+  if (/(travel|transport|fuel|car|dvla|train|bus)/.test(value)) return "Transport";
+  if (/(spotify|disney|netflix|now tv|chat ?gpt|subscription|ps5|playstation)/.test(value)) return "Subscriptions";
+  if (/(spending|pocket money|allowance)/.test(value)) return "Personal spending";
+  return "Other commitments";
+};
+
 const isFlexAllowance = (label: string) =>
   label.trim().toLowerCase() === UNFORESEEN_LABEL.toLowerCase() ||
   FLEX_ALLOWANCES.some((item) => item.label.toLowerCase() === label.trim().toLowerCase());
@@ -315,6 +336,20 @@ export default function ModernMonthlyPlan({
   const fundedPlanMonth = MONTHS[fundedPlanDate.getUTCMonth()];
   const fundedPlanYear = fundedPlanDate.getUTCFullYear();
   const payPeriodLabel = `${MONTHS[cursor.month - 1]} ${cursor.year} pay → ${fundedPlanMonth} ${fundedPlanYear} plan`;
+  const regularBills = committedBills.filter((item) => !item.id?.startsWith("activity:"));
+  const activityBills = committedBills.filter((item) => item.id?.startsWith("activity:"));
+  const commitmentGroups = COMMITMENT_CATEGORIES.map((category) => {
+    const items = regularBills.filter((item) =>
+      (COMMITMENT_CATEGORIES.includes(item.categoryName as typeof COMMITMENT_CATEGORIES[number])
+        ? item.categoryName
+        : guessCommitmentCategory(item.label)) === category
+    );
+    return {
+      category,
+      items,
+      total: roundMoney(items.reduce((sum, item) => sum + item.amount, 0)),
+    };
+  }).filter((group) => group.items.length > 0);
 
   async function categorise(transaction: WorkspaceTransaction, categoryId: string, learn = true) {
     const category = data?.categories.find((item) => item.id === categoryId);
@@ -460,6 +495,7 @@ export default function ModernMonthlyPlan({
       month1to12: fundedPlanDate.getUTCMonth() + 1,
       scope: "from-now-on",
       expectedDay: row.expectedDay,
+      categoryName: row.categoryName || guessCommitmentCategory(row.label),
     });
     if (result.kind === "debt") {
       await deleteBudgetRowScoped(row.id, "entire-range", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
@@ -638,25 +674,67 @@ export default function ModernMonthlyPlan({
               </div>
               <button className="soft-button" onClick={() => setModal("commitment")}><Plus size={15} /> Add commitment</button>
               <div className="commitment-editor">
-                {committedBills.map((bill) => bill.id?.startsWith("activity:") ? (
-                  <article className="commitment-static" key={bill.id}>
-                    <span><b>{bill.label}</b><small>From family activities</small></span>
-                    <strong>{money(bill.amount)}</strong>
-                  </article>
-                ) : (
-                  <article key={bill.id || bill.label}>
-                    <label><span>Commitment</span><input value={bill.label} onChange={(event) => updateCommitment(bill.id, { label: event.target.value })} onBlur={() => persistCommitment(bill)} /></label>
-                    <label><span>Monthly amount</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onFocus={selectNumericValue} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} onBlur={() => persistCommitment(bill)} /></div></label>
-                    <button className="icon-button danger" aria-label={`Remove ${bill.label}`} onClick={async () => {
-                      if (!bill.id) return;
-                      await deleteBudgetRowScoped(bill.id, "entire-range", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
-                      setCommittedBills((items) => items.filter((item) => item.id !== bill.id));
-                      setPlannedExpenses((value) => Math.max(0, value - bill.amount));
-                      onFinanceChanged?.();
-                    }}><Trash2 size={15} /></button>
-                  </article>
+                {commitmentGroups.map((group) => (
+                  <details className="commitment-group" key={group.category}>
+                    <summary>
+                      <span className="commitment-group-icon"><ChevronRight size={15} /></span>
+                      <span><b>{group.category}</b><small>{group.items.length} {group.items.length === 1 ? "commitment" : "commitments"}</small></span>
+                      <strong>{money(group.total)}</strong>
+                    </summary>
+                    <div className="commitment-group-body">
+                      {group.items.map((bill) => (
+                        <article key={bill.id || bill.label}>
+                          <label><span>Commitment</span><input value={bill.label} onChange={(event) => updateCommitment(bill.id, { label: event.target.value })} onBlur={() => persistCommitment(bill)} /></label>
+                          <label>
+                            <span>Category</span>
+                            <select
+                              value={COMMITMENT_CATEGORIES.includes(bill.categoryName as typeof COMMITMENT_CATEGORIES[number]) ? bill.categoryName : guessCommitmentCategory(bill.label)}
+                              onChange={(event) => {
+                                const next = { ...bill, categoryName: event.target.value };
+                                updateCommitment(bill.id, { categoryName: event.target.value });
+                                persistCommitment(next);
+                              }}
+                            >
+                              {COMMITMENT_CATEGORIES.map((category) => <option value={category} key={category}>{category}</option>)}
+                            </select>
+                          </label>
+                          <label><span>Monthly amount</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onFocus={selectNumericValue} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} onBlur={() => persistCommitment(bill)} /></div></label>
+                          <button className="icon-button danger" aria-label={`Remove ${bill.label}`} onClick={async () => {
+                            if (!bill.id) return;
+                            await deleteBudgetRowScoped(bill.id, "entire-range", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
+                            setCommittedBills((items) => items.filter((item) => item.id !== bill.id));
+                            setPlannedExpenses((value) => Math.max(0, value - bill.amount));
+                            onFinanceChanged?.();
+                          }}><Trash2 size={15} /></button>
+                        </article>
+                      ))}
+                    </div>
+                  </details>
                 ))}
-                {debtMinimums > 0 && <article className="commitment-static debt-total"><span><b>Debt minimum payments</b><small>Managed in Debt freedom</small></span><strong>{money(debtMinimums)}</strong></article>}
+                {activityBills.length > 0 && (
+                  <details className="commitment-group activity-total">
+                    <summary>
+                      <span className="commitment-group-icon"><ChevronRight size={15} /></span>
+                      <span><b>Family activities</b><small>{activityBills.length} {activityBills.length === 1 ? "activity" : "activities"}</small></span>
+                      <strong>{money(activityBills.reduce((sum, item) => sum + item.amount, 0))}</strong>
+                    </summary>
+                    <div className="commitment-group-body">
+                      {activityBills.map((bill) => <article className="commitment-static" key={bill.id}><span><b>{bill.label}</b><small>Managed in family activities</small></span><strong>{money(bill.amount)}</strong></article>)}
+                    </div>
+                  </details>
+                )}
+                {debtMinimums > 0 && (
+                  <details className="commitment-group debt-total">
+                    <summary>
+                      <span className="commitment-group-icon"><ChevronRight size={15} /></span>
+                      <span><b>Debt minimum payments</b><small>{debts.length} {debts.length === 1 ? "debt" : "debts"} · managed in Debt freedom</small></span>
+                      <strong>{money(debtMinimums)}</strong>
+                    </summary>
+                    <div className="commitment-group-body">
+                      {debts.map((debt) => <article className="commitment-static" key={debt.id}><span><b>{debt.name}</b><small>Minimum payment</small></span><strong>{money(debt.minimum)}</strong></article>)}
+                    </div>
+                  </details>
+                )}
                 {committedBills.length === 0 && debtMinimums === 0 && <button className="empty-order-action" onClick={() => setModal("commitment")}>Add mortgage, council tax, utilities, childcare and other must-pay bills</button>}
               </div>
             </section>
@@ -855,6 +933,7 @@ function CommitmentModal({ year, month, onClose, onSaved }: {
 }) {
   const [label, setLabel] = React.useState("");
   const [amount, setAmount] = React.useState("");
+  const [categoryName, setCategoryName] = React.useState<typeof COMMITMENT_CATEGORIES[number]>("Home & household");
   const [saving, setSaving] = React.useState(false);
   const debtLike = /\b(credit\s*card|loan)\b/i.test(label);
 
@@ -871,11 +950,13 @@ function CommitmentModal({ year, month, onClose, onSaved }: {
         year,
         month1to12: month,
         scope: "from-now-on",
+        categoryName,
       });
       onSaved(result.kind);
     }}>
       <label className="wide"><span>Commitment name</span><input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. Mortgage, Council tax, Octopus Energy" /></label>
       <label><span>Monthly amount</span><div className="currency-input">£<input type="number" required min="0.01" step=".01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div></label>
+      <label><span>Category</span><select value={categoryName} onChange={(event) => setCategoryName(event.target.value as typeof COMMITMENT_CATEGORIES[number])}>{COMMITMENT_CATEGORIES.map((category) => <option value={category} key={category}>{category}</option>)}</select></label>
       <button className="primary-button wide" disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : debtLike ? <CreditCard size={16} /> : <Plus size={16} />} {debtLike ? "Add to Debt freedom" : "Save commitment"}</button>
     </form>
   </ModalFrame>;
