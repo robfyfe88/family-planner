@@ -1,5 +1,5 @@
 import Link from "next/link";
-import HearthPlanLogo from "@/components/HearthPlanLogo";
+import KinfoldLogo from "@/components/KinfoldLogo";
 import BudgetTrendChart, { PotDef } from "@/components/BudgetTrendChart";
 import React from "react";
 import Section from "@/components/Section";
@@ -14,6 +14,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateHouseholdForUser as getHouseholdIdOrThrow } from "@/lib/household";
+import { ArrowRight, Baby, CalendarHeart, CheckCircle2, Palmtree, PiggyBank, ShieldCheck, WalletCards } from "lucide-react";
 
 type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri";
 const DAYS: DayKey[] = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -287,9 +288,10 @@ export default async function DashboardShell() {
   const dashboardPlannedExpenses = (budget?.plannedExpensePence ?? 0) / 100 + s.monthlyActivityCost;
 
   return (
-    <div className="dashboard-shell max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-6">
-      <header className="flex items-center justify-between gap-3">
-        <HearthPlanLogo size={50} variant="app" />
+    <div className="dashboard-shell kinfold-dashboard">
+      <header className="kinfold-topbar">
+        <KinfoldLogo size={44} />
+        <span className="topbar-context"><CheckCircle2 size={15} /> One shared household plan</span>
         {session?.user ? <UserMenu user={session.user} /> : null}
       </header>
 

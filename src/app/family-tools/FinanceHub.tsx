@@ -428,7 +428,7 @@ function Overview(props: {
               ? "Enter both take-home pays, then add the bills and debt minimums you must cover."
               : shortfall > 0
                 ? `You are ${money(shortfall)} short before savings or debt overpayments. Check the monthly plan first.`
-                : `${money(extra)} remains after commitments. HearthPlan assigns it to emergency savings and debt below.`}
+                : `${money(extra)} remains after commitments. Kinfold assigns it to emergency savings and debt below.`}
           </p>
           <button className="primary-button" onClick={() => onNavigate("plan")}>
             Review this pay cycle <ArrowRight size={17} />
@@ -675,7 +675,7 @@ function EmergencySavings({ goal, profile, updateProfile, persistGoal, target, s
     <div className="savings-layout">
       <section className="finance-panel emergency-panel">
         <div className="section-heading">
-          <div><span className="section-kicker">Your safety net</span><h2>Save something every month</h2><p>The first milestone is one month of commitments. Until then, HearthPlan splits your extra money equally between this fund and your priority debt.</p></div>
+          <div><span className="section-kicker">Your safety net</span><h2>Save something every month</h2><p>The first milestone is one month of commitments. Until then, Kinfold splits your extra money equally between this fund and your priority debt.</p></div>
         </div>
         <div className="emergency-kpis">
           <div><span>Saved now</span><strong>{money(saved)}</strong></div>

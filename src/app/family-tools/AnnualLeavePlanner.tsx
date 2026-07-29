@@ -346,11 +346,11 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
   };
 
   return (
-    <div className="space-y-6">
-      <section className="pillar-overview leave-overview">
+    <div className="pillar-page leave-page">
+      <section className="pillar-command leave-command">
         <div className="pillar-overview-copy">
-          <span className="section-kicker">Leave pillar</span>
-          <h2>Cover every school closure</h2>
+          <span className="section-kicker">Leave and school cover</span>
+          <h1>Make every closed day somebody&apos;s plan</h1>
           <p>Use work patterns, annual leave and caregiver help together so school closures are covered without using more leave than necessary.</p>
         </div>
         {!isCaregiver && (
@@ -372,7 +372,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
       </section>
 
       {!isCaregiver && (
-        <details className="pillar-settings">
+        <details className="pillar-settings setup-drawer">
           <summary><span><b>Leave rules and allowances</b><small>Parent allowances, regular days off, bank holidays and automatic planning controls</small></span><strong>Configure</strong></summary>
           <div className="pillar-settings-body space-y-4">
           <div className="grid md:grid-cols-2 gap-6">
@@ -454,7 +454,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         </details>
       )}
 
-      <section className="card">
+      <section className="plan-health-strip">
         <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
           <Stat label={`${parentA?.name ?? "Parent A"} leave (used/total)`} value={`${stats.usedA}/${stats.totalA}`} />
           {parentB && <Stat label={`${parentB.name} leave (used/total)`} value={`${stats.usedB}/${stats.totalB}`} />}
@@ -472,7 +472,7 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
         )}
       </section>
 
-      <section className="card">
+      <section className="pillar-workspace calendar-workspace leave-calendar">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))}>←</Button>

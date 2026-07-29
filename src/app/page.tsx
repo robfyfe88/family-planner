@@ -11,7 +11,7 @@ import {
   Target,
 } from "lucide-react";
 import SignInButton from "@/components/SignInButton";
-import HearthPlanLogo from "@/components/HearthPlanLogo";
+import KinfoldLogo from "@/components/KinfoldLogo";
 
 const promises = [
   "Know exactly what’s left each month",
@@ -23,7 +23,7 @@ export default function LandingPage() {
   return (
     <main className="marketing-page">
       <header className="marketing-header">
-        <HearthPlanLogo size={48} variant="app" />
+        <KinfoldLogo size={46} />
         <div className="marketing-actions">
           <Link href="#how-it-works">How it works</Link>
           <SignInButton />
@@ -35,7 +35,7 @@ export default function LandingPage() {
           <div className="marketing-kicker"><Sparkles size={14} /> Money clarity for real family life</div>
           <h1>A calmer home starts with a clearer financial future.</h1>
           <p>
-            HearthPlan brings your budget, debt payoff, savings goals, childcare costs and family commitments
+            Kinfold brings your budget, debt payoff, savings goals, childcare costs and family commitments
             into one shared plan—so you can make confident decisions together.
           </p>
           <div className="hero-actions">
@@ -78,7 +78,7 @@ export default function LandingPage() {
         <div className="marketing-section-heading">
           <span>The whole picture</span>
           <h2>Money decisions don’t happen in isolation.</h2>
-          <p>Your childcare, leave and activities all affect the plan. HearthPlan keeps those connections visible.</p>
+          <p>Your childcare, leave and activities all affect the plan. Kinfold keeps those connections visible.</p>
         </div>
         <div className="feature-grid">
           <article className="feature-money">
@@ -106,7 +106,7 @@ export default function LandingPage() {
         <div className="how-copy">
           <span>A weekly money rhythm</span>
           <h2>Ten calm minutes. One shared direction.</h2>
-          <p>HearthPlan is built around a simple household check-in, not endless admin.</p>
+          <p>Kinfold is built around a simple household check-in, not endless admin.</p>
         </div>
         <ol className="how-list">
           <li><b>1</b><div><strong>Check the month</strong><span>Confirm income, bills and family costs.</span></div></li>
@@ -124,9 +124,9 @@ export default function LandingPage() {
       </section>
 
       <footer className="marketing-footer">
-        <HearthPlanLogo size={40} variant="app" />
-        <span>© {new Date().getFullYear()} HearthPlan</span>
-        <a href="mailto:robert@hearthplan.co.uk">Contact</a>
+        <KinfoldLogo size={36} compact />
+        <span>© {new Date().getFullYear()} Kinfold</span>
+        <span>Private family workspace</span>
       </footer>
     </main>
   );

@@ -951,7 +951,7 @@ function RulesView({ rules, categories, onAdded, onRemoved }: {
   return (
     <div className="workspace-surface">
       <div className="surface-heading">
-        <div><span className="section-kicker">Optional automation</span><h3>Categorise once, remember next month</h3><p>You do not need to set this up before importing. When you change a transaction&apos;s category, HearthPlan remembers that merchant automatically.</p></div>
+        <div><span className="section-kicker">Optional automation</span><h3>Categorise once, remember next month</h3><p>You do not need to set this up before importing. When you change a transaction&apos;s category, Kinfold remembers that merchant automatically.</p></div>
       </div>
       <form className="rule-builder" onSubmit={async (event) => {
         event.preventDefault();
@@ -1141,7 +1141,7 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
       const amountIndex = findCsvColumn(header, [/^amount(?:\s*\(.+\))?$/, /^value(?:\s*\(.+\))?$/, /transaction amount/]);
       const categoryIndex = findCsvColumn(header, [/spending category/, /^category$/]);
       if (dateIndex < 0 || descriptionIndex < 0 || amountIndex < 0) {
-        throw new Error(`We found: ${header.join(", ")}. HearthPlan needs a date, merchant/counter party and amount column.`);
+        throw new Error(`We found: ${header.join(", ")}. Kinfold needs a date, merchant/counter party and amount column.`);
       }
       const rows = lines.slice(1).map(parseCsvLine).map((cells) => ({
         date: parseStatementDate(cells[dateIndex] || ""),
@@ -1160,7 +1160,7 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
     }
   }
   return <ModalFrame title="Import a bank statement" subtitle="Works immediately" onClose={onClose}>
-    <p className="modal-intro">Download a CSV from your bank. HearthPlan will detect duplicates and apply any category rules you’ve taught it.</p>
+    <p className="modal-intro">Download a CSV from your bank. Kinfold will detect duplicates and apply any category rules you’ve taught it.</p>
     <div className="import-drop">
       <FileUp />
       <strong>{file ? file.name : "Choose a CSV statement"}</strong>

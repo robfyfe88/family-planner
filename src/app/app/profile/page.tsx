@@ -21,7 +21,7 @@ import { capsForTier, MemberRoleAny, PLAN_LABEL, PlanTier, showInviteEmail, vali
 import MemberCard from "@/components/profile/MemberCard";
 import AddMemberCard from "@/components/profile/AddMemberCard";
 import { UserMenu } from "@/components/ui/UserMenu";
-import HearthPlanLogo from "@/components/HearthPlanLogo";
+import KinfoldLogo from "@/components/KinfoldLogo";
 
 export default function ProfilePage() {
     const { data: session, status } = useSession();
@@ -172,7 +172,7 @@ function ProfileInner() {
     return (
         <div className="max-w-5xl mx-auto p-3 sm:p-6 space-y-4">
             <div className="flex items-center justify-between w-full">
-                <HearthPlanLogo size={50} variant="app" />
+                <KinfoldLogo size={50} />
                 {session?.user && <UserMenu user={session.user} />}
             </div>
 

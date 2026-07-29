@@ -1,7 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import HearthPlanLogo from "@/components/HearthPlanLogo";
+import KinfoldLogo from "@/components/KinfoldLogo";
 import { Button } from "@/components/ui/button";
 import { GoogleIcon } from "@/components/ui/GoogleIcon";
 
@@ -9,7 +9,7 @@ export default function SignInCard() {
   return (
     <div className="p-6">
       <div className="max-w-md mx-auto text-center p-8 border rounded-2xl bg-[var(--card-bg)]">
-        <HearthPlanLogo size={50} variant="app" />
+        <KinfoldLogo size={50} />
         <p className="text-sm opacity-70 mb-5">
           Sign in to save your nursery plans, leave schedules, and budgets.
         </p>

@@ -8,7 +8,7 @@ import { fetchSubscription, setSubscriptionTier, cancelToFree, type PlanTier } f
 import { Check, Shield, Crown, Users, AlertTriangle, ArrowLeft } from "lucide-react";
 import { GoogleIcon } from "@/components/ui/GoogleIcon";
 import { UserMenu } from "@/components/ui/UserMenu";
-import HearthPlanLogo from "@/components/HearthPlanLogo";
+import KinfoldLogo from "@/components/KinfoldLogo";
 
 type TierCardProps = {
     tier: PlanTier;
@@ -128,7 +128,7 @@ export default function SubscribePage() {
     return (
         <div className="max-w-5xl mx-auto p-3 sm:p-6 space-y-5">
             <div className="flex items-center justify-between w-full">
-                <HearthPlanLogo size={50} variant="app" />
+                <KinfoldLogo size={50} />
                 {session?.user && <UserMenu user={session.user} />}
             </div>
             <div className="flex items-center justify-between">

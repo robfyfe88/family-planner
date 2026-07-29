@@ -511,11 +511,11 @@ function toUpsertPayload(a: Activity) {
 
   // --- UI ---
   return (
-    <div className="space-y-6">
-      <section className="pillar-overview activities-overview">
+    <div className="pillar-page activities-page">
+      <section className="pillar-command activities-command">
         <div className="pillar-overview-copy">
-          <span className="section-kicker">Activities pillar</span>
-          <h2>Keep family time and costs visible</h2>
+          <span className="section-kicker">Family activities</span>
+          <h1>Make room for the good stuff</h1>
           <p>See the month’s activity load and cost before it reaches the calendar or takes money away from savings and debt repayment.</p>
         </div>
         <Button size="sm" onClick={() => openForCreate(ymd(monthLo), ymd(monthLo))} disabled={loading || saving}>
@@ -538,7 +538,7 @@ function toUpsertPayload(a: Activity) {
         <div className="p-3 border rounded-lg text-red-600 bg-red-50">{error}</div>
       )}
 
-      <details className="pillar-settings">
+      <details className="pillar-settings setup-drawer">
         <summary><span><b>Family and activity setup</b><small>Review participating family members and reset an unfinished activity form</small></span><strong>Configure</strong></summary>
         <div className="pillar-settings-body space-y-4">
         <div className="flex flex-wrap items-end gap-3 justify-between">
@@ -578,7 +578,7 @@ function toUpsertPayload(a: Activity) {
         </div>
       </details>
 
-      <section className="card">
+      <section className="pillar-workspace calendar-workspace activities-calendar">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} disabled={loading}>

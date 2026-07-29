@@ -309,10 +309,11 @@ export default function NurseryPlannerPage() {
   const familySupport = Math.max(0, familyGrossMonthly - results.familyParentNet);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6">
-      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="pillar-page childcare-page">
+      <header className="pillar-titlebar">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold">Nursery Cost Planner</h1>
+          <span className="section-kicker">Childcare</span>
+          <h1>Your real cost of care</h1>
           <p className="text-xs sm:text-sm opacity-80 pt-4">
             Per-child rates & sessions, accurate funding, and monthly totals — stored in your account.
           </p>
@@ -321,7 +322,7 @@ export default function NurseryPlannerPage() {
         <YearModeToggle yearMode={yearMode} setYearMode={changeYearMode} />
       </header>
 
-      <section className="pillar-overview childcare-overview">
+      <section className="pillar-command childcare-command">
         <div className="pillar-overview-copy">
           <span className="section-kicker">Childcare pillar</span>
           <h2>Know the real cost of care</h2>
@@ -340,7 +341,7 @@ export default function NurseryPlannerPage() {
       </section>
 
       {yearMode === "TERM_TIME" && (
-        <div className="card flex flex-col sm:flex-row sm:items-end gap-4">
+        <div className="planner-compact-control">
           <NumberField
             label="Term weeks per year"
             value={termWeeks}
@@ -356,8 +357,8 @@ export default function NurseryPlannerPage() {
         <div className="rounded-xl border bg-red-50 text-red-800 px-3 py-2 text-sm">{error}</div>
       )}
 
-      <section className="lgcard">
-        <div className="flex items-center gap-2 border-b pb-2">
+      <section className="pillar-workspace childcare-workspace">
+        <div className="workspace-tabbar">
           <div className="flex-1 -mx-2 px-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <div className="inline-flex gap-2">
               {children.map((child) => {
@@ -382,8 +383,8 @@ export default function NurseryPlannerPage() {
         </div>
 
         {activeChild ? (
-          <div className="space-y-6 pt-4">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="childcare-workspace-body">
+            <div className="child-profile-panel">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs sm:text-sm">Child name</Label>
@@ -422,10 +423,10 @@ export default function NurseryPlannerPage() {
               )}
             </div>
 
-            <details className="pillar-settings">
+            <details className="pillar-settings setup-drawer">
               <summary><span><b>Provider rates and session rules</b><small>Open when the nursery changes its prices, hours or charging rules</small></span><strong>Configure</strong></summary>
               <div className="pillar-settings-body space-y-4">
-            <section className="card">
+            <section className="planner-panel">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base sm:text-lg font-medium">Rates for {activeChild.name}</h2>
                 <span className="badge badge-teal">Provider</span>
@@ -468,7 +469,7 @@ export default function NurseryPlannerPage() {
               </div>
             </section>
 
-            <section className="card">
+            <section className="planner-panel">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base sm:text-lg font-medium">Sessions</h2>
                 <span className="badge badge-pink">Timetable</span>
@@ -513,7 +514,7 @@ export default function NurseryPlannerPage() {
               </div>
             </details>
 
-            <section className="card">
+            <section className="planner-panel timetable-planner">
               <div className="flex items-center justify-between mb-2">
                 <div className="font-medium">Timetable</div>
                 <Button
@@ -556,7 +557,7 @@ export default function NurseryPlannerPage() {
               const calc = results.perChild.find(p => p.id === activeChild.id);
               if (!calc) return null;
               return (
-                <section className="card">
+                <section className="planner-panel cost-summary-panel">
                   <div className="overflow-auto">
                     <table className="w-full text-xs sm:text-sm">
                       <thead>
@@ -609,7 +610,7 @@ export default function NurseryPlannerPage() {
         )}
       </section>
 
-      <section className="card">
+      <section className="pillar-outcome childcare-outcome">
         <h2 className="text-lg font-medium mb-3">Family totals</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Stat label="Combined monthly invoice" value={gbp(results.familyMonthlyInvoice)} />

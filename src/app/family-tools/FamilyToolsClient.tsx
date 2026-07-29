@@ -5,10 +5,11 @@ import AnnualLeavePlanner from "./AnnualLeavePlanner";
 import NurseryPlannerPage from "./NurseryCostPlanner";
 import FinanceHub from "./FinanceHub";
 import ActivitiesPlanner from "./ActivitiesPlannner";
-import HearthPlanLogo from "@/components/HearthPlanLogo";
+import KinfoldLogo from "@/components/KinfoldLogo";
 import { UserMenu } from "@/components/ui/UserMenu";
 import { useSession } from "next-auth/react";
 import type { AnnualData } from "../app/annual/actions";
+import { Baby, CalendarHeart, LayoutDashboard, Palmtree, WalletCards } from "lucide-react";
 
 type TabKey = "nursery" | "leave" | "budget" | "activities";
 const ALL_TABS: TabKey[] = ["budget", "nursery", "leave", "activities"] as const;
@@ -38,7 +39,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
       if (typeof window === "undefined") return allowedTabs[0];
       const h = window.location.hash?.slice(1);
       if (h && isTab(h)) return clampToAllowed(h, allowedTabs);
-      const ls = localStorage.getItem("hearthplan:tab");
+      const ls = localStorage.getItem("kinfold:tab") ?? localStorage.getItem("hearthplan:tab");
       if (ls && isTab(ls)) return clampToAllowed(ls, allowedTabs);
       return allowedTabs[0];
     };
@@ -55,7 +56,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
     if (window.location.hash !== wanted) {
       window.history.replaceState(null, "", wanted);
     }
-    localStorage.setItem("hearthplan:tab", tab);
+    localStorage.setItem("kinfold:tab", tab);
   }, [tab, mounted]);
 
   React.useEffect(() => {
@@ -120,13 +121,14 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
   const showNursery = allowedTabs.includes("nursery");
 
   return (
-    <div className="max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between w-full">
-        <HearthPlanLogo size={50} variant="app" />
+    <div className="kinfold-app-shell">
+      <div className="kinfold-topbar">
+        <KinfoldLogo size={44} />
+        <a className="dashboard-return" href="/app/dashboard"><LayoutDashboard size={16} /> Household overview</a>
         {session?.user && <UserMenu user={session.user} />}
       </div>
 
-      <header className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
+      <header className="pillar-navigation">
         <div className="block sm:hidden sticky top-0 z-30 -mx-4 px-4 py-2 bg-[var(--background)]/80 backdrop-blur">
           <nav aria-label="Planner tabs (mobile)">
             <div className="grid grid-cols-2 gap-2">
@@ -138,6 +140,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                   ariaControls={ids.budgetPanel}
                   label="Money"
                   accent="var(--money-ink)"
+                  icon={<WalletCards size={17} />}
                 />
               )}
               {showNursery && (
@@ -145,9 +148,10 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                   id={ids.nurseryBtn}
                   active={tab === "nursery"}
                   onClick={() => setTab("nursery")}
-                  ariaControls={ids.nurseryPanel}
-                label="Childcare"
+                ariaControls={ids.nurseryPanel}
+                  label="Childcare"
                   accent="var(--accent-2)"
+                  icon={<Baby size={17} />}
                 />
               )}
               <GridTab
@@ -157,6 +161,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                 ariaControls={ids.leavePanel}
                 label="Leave"
                 accent="var(--accent)"
+                icon={<Palmtree size={17} />}
               />
               <GridTab
                 id={ids.activitiesBtn}
@@ -165,6 +170,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                 ariaControls={ids.activitiesPanel}
                 label="Activities"
                 accent="var(--accent-5)"
+                icon={<CalendarHeart size={17} />}
               />
             </div>
           </nav>
@@ -185,7 +191,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                 ariaControls={ids.budgetPanel}
                 accent="var(--money-ink)"
               >
-                Money
+                <WalletCards size={16} /> Money
               </PillTab>
             )}
             {showNursery && (
@@ -196,7 +202,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
                 ariaControls={ids.nurseryPanel}
                 accent="var(--accent-2)"
               >
-                Childcare
+                <Baby size={16} /> Childcare
               </PillTab>
             )}
             <PillTab
@@ -206,7 +212,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
               ariaControls={ids.leavePanel}
               accent="var(--accent)"
             >
-                Leave
+                <Palmtree size={16} /> Leave
             </PillTab>
             <PillTab
               id={ids.activitiesBtn}
@@ -215,13 +221,13 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
               ariaControls={ids.activitiesPanel}
               accent="var(--accent-5)"
             >
-                Activities
+                <CalendarHeart size={16} /> Activities
             </PillTab>
           </div>
         </nav>
       </header>
 
-      <div className="space-y-4 sm:space-y-6">
+      <div className="pillar-stage">
         {showNursery && (
           <Panel id={ids.nurseryPanel} labelledBy={ids.nurseryBtn} hidden={tab !== "nursery"}>
             <NurseryPlannerPage />
@@ -247,7 +253,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
 }
 
 function GridTab({
-  id, active, onClick, ariaControls, label, accent,
+  id, active, onClick, ariaControls, label, accent, icon,
 }: {
   id: string;
   active: boolean;
@@ -255,6 +261,7 @@ function GridTab({
   ariaControls: string;
   label: string;
   accent: string;
+  icon: React.ReactNode;
 }) {
   return (
     <button
@@ -268,7 +275,8 @@ function GridTab({
       }`}
       style={{ background: active ? accent : undefined }}
     >
-      {label}
+      {icon}
+      <span>{label}</span>
     </button>
   );
 }

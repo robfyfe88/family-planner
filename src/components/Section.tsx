@@ -34,16 +34,16 @@ export default function Section({
       : "bg-blue-600 hover:bg-blue-700";
 
   return (
-    <section className={`rounded-2xl border bg-white p-4 sm:p-5 ring-1 ${ring}`}>
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 className="text-lg sm:text-xl font-semibold">{title}</h2>
+    <section className={`dashboard-detail-section dashboard-tone-${tone} ${ring}`}>
+      <div className="dashboard-detail-heading">
+        <div><span>{tone === "violet" ? "Money" : tone === "green" ? "Childcare" : tone === "amber" ? "Leave" : "Activities"}</span><h2>{title}</h2></div>
         <Link href={ctaHref} passHref>
-          <Button className={`${pillBg} text-white cursor-pointer px-3 py-1.5 text-sm`}>
+          <Button className={`${pillBg} dashboard-detail-action`}>
             {ctaLabel}
           </Button>
         </Link>
       </div>
-      {children}
+      <div className="dashboard-detail-body">{children}</div>
     </section>
   );
 }
