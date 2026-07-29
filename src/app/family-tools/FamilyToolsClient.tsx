@@ -224,9 +224,7 @@ export default function FamilyToolsClient({ initialAnnual }: { initialAnnual: An
       <div className="space-y-4 sm:space-y-6">
         {showNursery && (
           <Panel id={ids.nurseryPanel} labelledBy={ids.nurseryBtn} hidden={tab !== "nursery"}>
-            <section className="card">
-              <NurseryPlannerPage />
-            </section>
+            <NurseryPlannerPage />
           </Panel>
         )}
 

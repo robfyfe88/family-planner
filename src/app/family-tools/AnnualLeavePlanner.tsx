@@ -347,18 +347,34 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl sm:text-2xl font-semibold">Annual Leave Planner</h2>
+      <section className="pillar-overview leave-overview">
+        <div className="pillar-overview-copy">
+          <span className="section-kicker">Leave pillar</span>
+          <h2>Cover every school closure</h2>
+          <p>Use work patterns, annual leave and caregiver help together so school closures are covered without using more leave than necessary.</p>
+        </div>
         {!isCaregiver && (
           <Button variant="outline" onClick={() => openAddDialogFor(ymd(new Date()))}>
             <Plus className="h-4 w-4 mr-2" />
             Add holiday event
           </Button>
         )}
-      </div>
+        <div className="pillar-kpis">
+          <span><small>School closure days</small><strong>{stats.schoolOffCount}</strong><em>Marked across the year</em></span>
+          <span className={stats.stillUncovered > 0 ? "needs-action" : ""}><small>Still uncovered</small><strong>{stats.stillUncovered}</strong><em>{stats.stillUncovered > 0 ? "Needs a coverage choice" : "Every marked day is covered"}</em></span>
+          <span><small>{parentA?.name ?? "Parent A"} leave</small><strong>{Math.max(0, stats.totalA - stats.usedA)} d</strong><em>{stats.usedA} of {stats.totalA} allocated</em></span>
+          {parentB && <span><small>{parentB.name} leave</small><strong>{Math.max(0, stats.totalB - stats.usedB)} d</strong><em>{stats.usedB} of {stats.totalB} allocated</em></span>}
+        </div>
+        <div className="pillar-next-step">
+          <b>{stats.stillUncovered > 0 ? "Recommended next move" : "Coverage is in good shape"}</b>
+          <span>{stats.stillUncovered > 0 ? `Run Auto-Plan, then review the ${stats.stillUncovered} uncovered ${stats.stillUncovered === 1 ? "day" : "days"} individually.` : "Review again when a school closure, work pattern or leave allowance changes."}</span>
+        </div>
+      </section>
 
       {!isCaregiver && (
-        <section className="card space-y-4">
+        <details className="pillar-settings">
+          <summary><span><b>Leave rules and allowances</b><small>Parent allowances, regular days off, bank holidays and automatic planning controls</small></span><strong>Configure</strong></summary>
+          <div className="pillar-settings-body space-y-4">
           <div className="grid md:grid-cols-2 gap-6">
             {parentA && (
               <ParentCard
@@ -434,7 +450,8 @@ export default function AnnualLeavePlanner({ initial }: { initial: AnnualData })
               </div>
             </div>
           </div>
-        </section>
+          </div>
+        </details>
       )}
 
       <section className="card">

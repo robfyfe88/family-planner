@@ -512,13 +512,35 @@ function toUpsertPayload(a: Activity) {
   // --- UI ---
   return (
     <div className="space-y-6">
-      <h2 className="text-xl sm:text-2xl font-semibold">Activities Planner</h2>
+      <section className="pillar-overview activities-overview">
+        <div className="pillar-overview-copy">
+          <span className="section-kicker">Activities pillar</span>
+          <h2>Keep family time and costs visible</h2>
+          <p>See the month’s activity load and cost before it reaches the calendar or takes money away from savings and debt repayment.</p>
+        </div>
+        <Button size="sm" onClick={() => openForCreate(ymd(monthLo), ymd(monthLo))} disabled={loading || saving}>
+          <CalendarPlus className="mr-1 h-4 w-4" />
+          New activity
+        </Button>
+        <div className="pillar-kpis">
+          <span><small>This month’s cost</small><strong>£{monthCostTotal.toFixed(2)}</strong><em>Included in the money plan</em></span>
+          <span><small>Sessions this month</small><strong>{sessionsThisMonth}</strong><em>Across {activities.length} active plans</em></span>
+          <span><small>Average per session</small><strong>£{sessionsThisMonth > 0 ? (monthCostTotal / sessionsThisMonth).toFixed(2) : "0.00"}</strong><em>Useful when comparing clubs</em></span>
+          <span><small>Family members</small><strong>{members.length}</strong><em>Parents, children and caregivers</em></span>
+        </div>
+        <div className="pillar-next-step">
+          <b>Monthly check-in</b>
+          <span>Confirm new term dates, one-off fees and cancelled sessions so the budget only carries costs you genuinely expect.</span>
+        </div>
+      </section>
 
       {error && (
         <div className="p-3 border rounded-lg text-red-600 bg-red-50">{error}</div>
       )}
 
-      <section className="card space-y-4">
+      <details className="pillar-settings">
+        <summary><span><b>Family and activity setup</b><small>Review participating family members and reset an unfinished activity form</small></span><strong>Configure</strong></summary>
+        <div className="pillar-settings-body space-y-4">
         <div className="flex flex-wrap items-end gap-3 justify-between">
           <div className="text-sm opacity-80">
             Assign members, schedule activities, choose a cost type, and we’ll roll it into your budget each month.
@@ -527,10 +549,6 @@ function toUpsertPayload(a: Activity) {
             <Button size="sm" variant="outline" onClick={() => setForm(emptyForm())} disabled={loading || saving}>
               <BrushCleaning className="mr-1 h-4 w-4" />
               Reset form
-            </Button>
-            <Button size="sm" onClick={() => openForCreate(ymd(monthLo), ymd(monthLo))} disabled={loading || saving}>
-              <CalendarPlus className="mr-1 h-4 w-4" />
-              New activity
             </Button>
           </div>
         </div>
@@ -557,7 +575,8 @@ function toUpsertPayload(a: Activity) {
             )}
           </div>
         </div>
-      </section>
+        </div>
+      </details>
 
       <section className="card">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">

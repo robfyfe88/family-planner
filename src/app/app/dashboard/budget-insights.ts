@@ -19,12 +19,21 @@ export type BudgetInsights = {
   plannedExpensePence: number;
   netPlanPence: number;
   totalPotsPence: number;
+  totalDebtPence: number;
+  debtMinimumsPence: number;
+  emergencySavedPence: number;
+  emergencyTargetPence: number;
+  priorityDebtName: string | null;
 
   plannedIncomeStr: string;
   plannedExpenseStr: string;
   netPlanStr: string;
   netPlanNote: string;
   totalPotsStr: string;
+  totalDebtStr: string;
+  debtMinimumsStr: string;
+  emergencySavedStr: string;
+  emergencyTargetStr: string;
   topPotNote: string;
 
   byMonth: {
@@ -71,16 +80,35 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
   const now = new Date();
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
+  const fundedDate = new Date(Date.UTC(year, month, 1));
+  const fundedMonth = fundedDate.getUTCMonth() + 1;
+  const fundedYear = fundedDate.getUTCFullYear();
+  const monthLabel = `${format(now, "MMM")} pay → ${format(fundedDate, "MMM yyyy")} plan`;
 
-  const monthLabel = format(now, "MMM yyyy");
-
-  const pots = await prisma.savingsPot.findMany({
-    where: { householdId },
-    orderBy: { balancePence: "desc" },
-  });
+  const [pots, debts, goals, profile] = await Promise.all([
+    prisma.savingsPot.findMany({
+      where: { householdId },
+      orderBy: { balancePence: "desc" },
+    }),
+    prisma.debt.findMany({ where: { householdId }, orderBy: { createdAt: "asc" } }),
+    prisma.financialGoal.findMany({ where: { householdId }, orderBy: { createdAt: "asc" } }),
+    prisma.financialProfile.findUnique({ where: { householdId } }),
+  ]);
 
   const totalPotsPence = pots.reduce((sum : any, p : any) => sum + (p.balancePence ?? 0), 0);
   const topPot = pots[0];
+  const totalDebtPence = debts.reduce((sum, debt) => sum + debt.balancePence, 0);
+  const debtMinimumsPence = debts.reduce((sum, debt) => sum + Math.min(debt.minimumPence, debt.balancePence), 0);
+  const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
+  const emergencySavedPence = emergencyGoal?.savedPence ?? 0;
+  const emergencyTargetPence = emergencyGoal?.targetPence ?? 0;
+  const eligibleDebts = debts.filter((debt) => debt.balancePence > 0 && (debt.aprBasisPoints > 0 || debt.promotionalEndDate));
+  const orderedEligible = [...eligibleDebts].sort((a, b) =>
+    profile?.debtStrategy === "snowball"
+      ? a.balancePence - b.balancePence
+      : b.aprBasisPoints - a.aprBasisPoints || a.balancePence - b.balancePence
+  );
+  const priorityDebtName = orderedEligible[0]?.name ?? null;
 
   const potPlansYear = await prisma.potMonthly.findMany({
     where: { householdId, year },
@@ -96,11 +124,11 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
   const lines = await prisma.budgetLine.findMany({
     where: {
       householdId,
-      effectiveFrom: { lte: yearEnd(year) },
+      effectiveFrom: { lte: yearEnd(Math.max(year, fundedYear)) },
       OR: [{ effectiveTo: null }, { effectiveTo: { gte: yearStart(year) } }],
     },
     include: {
-      overrides: { where: { year }, select: { month: true, amountPence: true } },
+      overrides: { where: { year: { in: Array.from(new Set([year, fundedYear])) } }, select: { year: true, month: true, amountPence: true } },
       category: { select: { id: true, name: true, flow: true } },
     },
     orderBy: [{ label: "asc" }],
@@ -124,7 +152,7 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
 
       if (!active) continue;
 
-      const ov = line.overrides.find((o : any) => o.month === m);
+      const ov = line.overrides.find((o : any) => o.year === year && o.month === m);
       const amount = ov?.amountPence ?? (line.defaultAmountPence ?? 0);
 
       if (line.flow === "income") byMonth.income[m] += amount;
@@ -144,7 +172,15 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
   }
 
   const plannedIncomePence = byMonth.income[month] ?? 0;
-  const plannedExpensePence = byMonth.expense[month] ?? 0;
+  const fundedStart = monthStart(fundedYear, fundedMonth);
+  const plannedExpensePence = lines.reduce((sum, line) => {
+    const active =
+      line.effectiveFrom.getTime() <= fundedStart.getTime() &&
+      (line.effectiveTo == null || line.effectiveTo.getTime() >= fundedStart.getTime());
+    if (!active || line.flow !== "expense") return sum;
+    const override = line.overrides.find((item) => item.year === fundedYear && item.month === fundedMonth);
+    return sum + (override?.amountPence ?? line.defaultAmountPence ?? 0);
+  }, 0);
   const netPlanPence = plannedIncomePence - plannedExpensePence;
 
   const topAgg = new Map<
@@ -154,11 +190,11 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
 
   for (const line of lines) {
     const active =
-      line.effectiveFrom.getTime() <= monthStart(year, month).getTime() &&
-      (line.effectiveTo == null || line.effectiveTo.getTime() >= monthStart(year, month).getTime());
+      line.effectiveFrom.getTime() <= fundedStart.getTime() &&
+      (line.effectiveTo == null || line.effectiveTo.getTime() >= fundedStart.getTime());
     if (!active) continue;
 
-    const ov = line.overrides.find((o : any) => o.month === month);
+    const ov = line.overrides.find((o : any) => o.year === fundedYear && o.month === fundedMonth);
     const amount = ov?.amountPence ?? (line.defaultAmountPence ?? 0);
     const flow = line.flow as Flow;
 
@@ -188,12 +224,21 @@ export async function getBudgetInsights(): Promise<BudgetInsights> {
     plannedExpensePence,
     netPlanPence,
     totalPotsPence,
+    totalDebtPence,
+    debtMinimumsPence,
+    emergencySavedPence,
+    emergencyTargetPence,
+    priorityDebtName,
 
     plannedIncomeStr: money(plannedIncomePence),
     plannedExpenseStr: money(plannedExpensePence),
     netPlanStr: money(netPlanPence),
     netPlanNote: netPlanPence >= 0 ? "On plan to save" : "Deficit planned",
     totalPotsStr: money(totalPotsPence),
+    totalDebtStr: money(totalDebtPence),
+    debtMinimumsStr: money(debtMinimumsPence),
+    emergencySavedStr: money(emergencySavedPence),
+    emergencyTargetStr: money(emergencyTargetPence),
     topPotNote: topPot ? `Top pot: ${topPot.name} ${money(topPot.balancePence ?? 0)}` : "No pots",
 
     byMonth,

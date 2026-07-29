@@ -244,8 +244,6 @@ export default async function DashboardShell() {
 
   const monthLabel = budget?.monthLabel ?? "This month";
   const plannedIncomeStr = budget?.plannedIncomeStr ?? "£0";
-  const plannedExpenseStr = budget?.plannedExpenseStr ?? "£0";
-  const netPlanStr = budget?.netPlanStr ?? "£0";
   const totalPotsStr = budget?.totalPotsStr ?? "£0";
   const topPotNote = budget?.topPotNote ?? "";
   const byMonth = budget?.byMonth ?? { income: {}, expense: {}, savings: {} };
@@ -279,29 +277,47 @@ export default async function DashboardShell() {
     }
     return point as any;
   });
+  const childcareParentNet = nursery?.kids.reduce((sum: number, child: any) => sum + child.monthly.parentNet, 0) ?? 0;
+  const childcareInvoice = nursery?.kids.reduce((sum: number, child: any) => sum + child.monthly.invoice, 0) ?? 0;
+  const childcareTfc = nursery?.kids.reduce((sum: number, child: any) => sum + child.monthly.tfcTopUp, 0) ?? 0;
+  const leaveRemaining = s.leaveBalances.reduce((sum, item) => sum + item.remaining, 0);
+  const moneyAfterMinimums = budget
+    ? (budget.plannedIncomePence - budget.plannedExpensePence - budget.debtMinimumsPence) / 100 - s.monthlyActivityCost
+    : 0;
+  const dashboardPlannedExpenses = (budget?.plannedExpensePence ?? 0) / 100 + s.monthlyActivityCost;
 
   return (
-    <div className="max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-6">
+    <div className="dashboard-shell max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-6">
       <header className="flex items-center justify-between gap-3">
         <HearthPlanLogo size={50} variant="app" />
         {session?.user ? <UserMenu user={session.user} /> : null}
       </header>
 
-      <div className="flex items-center justify-between ">
+      <section className="dashboard-command">
         <div>
-          <h1 className="text-xl font-bold ml-1">{s.householdName}</h1>
+          <span className="section-kicker">Household command centre</span>
+          <h1>{s.householdName}</h1>
+          <p>One shared view of the four things that shape family life: money, childcare, leave cover and activities.</p>
         </div>
-      </div>
+        <div className="dashboard-pillar-grid">
+          {!isCaregiver && <DashboardPillar href="/app#budget" label="Money" value={budget ? gbp(moneyAfterMinimums) : "£0"} note="After commitments and debt minimums" tone="money" />}
+          {!isCaregiver && <DashboardPillar href="/app#nursery" label="Childcare" value={gbp(childcareParentNet)} note={`${nursery?.kids.length ?? 0} profiles · monthly parent cost`} tone="childcare" />}
+          <DashboardPillar href="/app#leave" label="Leave" value={`${leaveRemaining} days`} note={`${s.closuresThisMonth} closures this month`} tone="leave" />
+          <DashboardPillar href="/app#activities" label="Activities" value={gbp(s.monthlyActivityCost)} note={`${s.monthlyActivitySessions} sessions this month`} tone="activities" />
+        </div>
+      </section>
 
       {!isCaregiver && (
         <Section title="Budget overview" ctaHref="/app#budget" ctaLabel="Open Family Budget" tone="violet">
           <div className="grid gap-4">
             <BudgetTrendChart data={trendData} potDefs={potDefs} />
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <Stat label="Planned income" value={plannedIncomeStr} sub={monthLabel} />
-              <Stat label="Planned expenses" value={plannedExpenseStr} sub={monthLabel} />
-              <Stat label="Net plan" value={netPlanStr} sub={budget?.netPlanNote} />
-              <Stat label="Saved so far" value={totalPotsStr} sub={topPotNote} />
+              <Stat label="Planned expenses" value={gbp(dashboardPlannedExpenses)} sub={`${monthLabel} · includes activities`} />
+              <Stat label="After debt minimums" value={gbp(moneyAfterMinimums)} sub={moneyAfterMinimums >= 0 ? "Available for saving and debt overpayment" : "Plan needs attention"} />
+              <Stat label="Debt remaining" value={budget?.totalDebtStr ?? "£0"} sub={budget?.priorityDebtName ? `Priority: ${budget.priorityDebtName}` : "No eligible priority debt"} />
+              <Stat label="Debt minimums" value={budget?.debtMinimumsStr ?? "£0"} sub="Protected in every pay cycle" />
+              <Stat label="Emergency savings" value={budget?.emergencySavedStr ?? totalPotsStr} sub={budget?.emergencyTargetPence ? `Target ${budget.emergencyTargetStr}` : topPotNote} />
             </div>
           </div>
           {!!budget?.topCategories?.length && (
@@ -334,6 +350,12 @@ export default async function DashboardShell() {
           ) : (
             nursery && (
               <div className="space-y-3">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <Stat label="Family parent cost" value={gbp(childcareParentNet)} sub="Monthly commitment" />
+                  <Stat label="Invoice after funded hours" value={gbp(childcareInvoice)} />
+                  <Stat label="Tax-Free Childcare top-up" value={`- ${gbp(childcareTfc)}`} />
+                  <Stat label="Children modelled" value={String(nursery.kids.length)} sub={nursery.yearMode === "FULL_YEAR" ? "Full-year care" : `${nursery.termWeeks} term weeks`} />
+                </div>
                 <Tabs defaultValue={nursery.kids[0].id} className="w-full">
                   <TabsList className="w-full overflow-x-auto max-w-64">
                     {nursery.kids.map((k: any) => (
@@ -381,6 +403,12 @@ export default async function DashboardShell() {
       )}
 
       <Section title="Annual leave & closures" ctaHref="/app#leave" ctaLabel="Open Annual Leave" tone="amber">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <Stat label="Leave remaining" value={`${leaveRemaining} days`} sub="Across both parents" />
+          <Stat label="Closures this month" value={String(s.closuresThisMonth)} sub={s.nextClosureISO ? `Next ${formatDay(s.nextClosureISO)}` : "No upcoming closure this month"} />
+          <Stat label="Upcoming leave" value={String(s.upcomingLeave.length)} sub="Next booked entries" />
+          <Stat label="Household members" value={String(s.membersCount)} sub="Parents, children and caregivers" />
+        </div>
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <div className="text-xs opacity-70 mb-2">Upcoming school closures</div>
@@ -398,22 +426,22 @@ export default async function DashboardShell() {
           </div>
 
           <div>
-            <div className="text-xs opacity-70 mb-2">Upcoming leave</div>
-            <ul className="space-y-1">
-              {s.upcomingLeave.length === 0 && <li className="text-sm opacity-70">No leave booked.</li>}
-              {s.upcomingLeave.map((l: any) => (
-                <li key={l.id} className="text-sm">
-                  <span className="inline-block w-28 opacity-70">{formatDay(l.dateISO)}</span>
-                  
-                  {l.member ? <span className="opacity-70 font-bold"> {l.member}</span> : null}
-                </li>
-              ))}
-            </ul>
+            <div className="text-xs opacity-70 mb-2">Leave allowance</div>
+            <div className="dashboard-breakdown-list">
+              {s.leaveBalances.map((item) => <span key={item.memberId}><b>{item.name}</b><em>{item.booked} used · {item.remaining} remaining</em><strong>{item.allowance} d</strong></span>)}
+              {s.leaveBalances.length === 0 && <p className="text-sm opacity-70">Add parent leave allowances in the Leave planner.</p>}
+            </div>
           </div>
         </div>
       </Section>
 
       <Section title="Activities snapshot" ctaHref="/app#activities" ctaLabel="Open Activities" tone="blue">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <Stat label="This month’s cost" value={gbp(s.monthlyActivityCost)} sub="Feeds the money plan" />
+          <Stat label="Sessions this month" value={String(s.monthlyActivitySessions)} />
+          <Stat label="Active activity plans" value={String(s.activeActivities)} />
+          <Stat label="Next 7 days" value={String(s.weeklyActivities)} sub="Scheduled sessions" />
+        </div>
         <div className="grid lg:grid-cols-2 gap-4">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -426,21 +454,29 @@ export default async function DashboardShell() {
           </div>
 
           <div>
-            <div className="text-xs opacity-70 mb-2">Next activities</div>
-            <ul className="space-y-1">
-              {s.nextActivities.length === 0 && (
-                <li className="text-sm opacity-70">No activities scheduled this week.</li>
-              )}
-              {s.nextActivities.map((a: any) => (
-                <li key={a.id} className="text-sm flex items-center gap-2">
-                  <span className="inline-block w-28 opacity-70">{formatDay(a.dateISO)}</span>
-                  <span className="font-medium">{a.label}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="text-xs opacity-70 mb-2">Monthly cost breakdown</div>
+            <div className="dashboard-breakdown-list">
+              {s.activityCostBreakdown.map((item) => <span key={item.name}><b>{item.name}</b><em>Expected this month</em><strong>{gbp(item.cost)}</strong></span>)}
+              {s.activityCostBreakdown.length === 0 && <p className="text-sm opacity-70">No activity costs expected this month.</p>}
+            </div>
           </div>
         </div>
       </Section>
     </div>
   );
+}
+
+function DashboardPillar({ href, label, value, note, tone }: { href: string; label: string; value: string; note: string; tone: string }) {
+  return (
+    <Link href={href} className={`dashboard-pillar ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{note}</small>
+      <ChevronRightIcon />
+    </Link>
+  );
+}
+
+function ChevronRightIcon() {
+  return <span aria-hidden className="dashboard-pillar-arrow">→</span>;
 }

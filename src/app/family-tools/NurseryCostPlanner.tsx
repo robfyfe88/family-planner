@@ -301,6 +301,13 @@ export default function NurseryPlannerPage() {
     );
   }
 
+  const familyWeeklyHours = results.perChild.reduce((sum, child) => sum + child.attendedHours, 0);
+  const familyGrossMonthly = results.perChild.reduce(
+    (sum, child) => sum + child.weeklyTotalBeforeFunding * factors.monthlyFactor,
+    0
+  );
+  const familySupport = Math.max(0, familyGrossMonthly - results.familyParentNet);
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6">
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -313,6 +320,24 @@ export default function NurseryPlannerPage() {
 
         <YearModeToggle yearMode={yearMode} setYearMode={changeYearMode} />
       </header>
+
+      <section className="pillar-overview childcare-overview">
+        <div className="pillar-overview-copy">
+          <span className="section-kicker">Childcare pillar</span>
+          <h2>Know the real cost of care</h2>
+          <p>Set the timetable once, see the effect of funded hours and Tax-Free Childcare, and carry the honest parent cost into the monthly money plan.</p>
+        </div>
+        <div className="pillar-kpis">
+          <span><small>Parent cost each month</small><strong>{gbp(results.familyParentNet)}</strong><em>Feeds your commitments</em></span>
+          <span><small>Funding and support</small><strong>{gbp(familySupport)}</strong><em>Estimated monthly reduction</em></span>
+          <span><small>Weekly care</small><strong>{familyWeeklyHours.toFixed(1)} h</strong><em>Across {children.length} {children.length === 1 ? "child" : "children"}</em></span>
+          <span><small>Planning basis</small><strong>{yearMode === "FULL_YEAR" ? "Full year" : "Term time"}</strong><em>{factors.weeksPerYear} funded weeks modelled</em></span>
+        </div>
+        <div className="pillar-next-step">
+          <b>Monthly check-in</b>
+          <span>Confirm attendance hours, provider rates and the TFC cap whenever childcare changes. The parent-net figure is the number your budget needs to protect.</span>
+        </div>
+      </section>
 
       {yearMode === "TERM_TIME" && (
         <div className="card flex flex-col sm:flex-row sm:items-end gap-4">
@@ -397,6 +422,9 @@ export default function NurseryPlannerPage() {
               )}
             </div>
 
+            <details className="pillar-settings">
+              <summary><span><b>Provider rates and session rules</b><small>Open when the nursery changes its prices, hours or charging rules</small></span><strong>Configure</strong></summary>
+              <div className="pillar-settings-body space-y-4">
             <section className="card">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base sm:text-lg font-medium">Rates for {activeChild.name}</h2>
@@ -482,6 +510,8 @@ export default function NurseryPlannerPage() {
                 <div className="self-end text-xs sm:text-sm opacity-70">Hourly is rounded up.</div>
               </div>
             </section>
+              </div>
+            </details>
 
             <section className="card">
               <div className="flex items-center justify-between mb-2">

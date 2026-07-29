@@ -9,6 +9,10 @@ export type DashboardData = {
   membersCount: number;
 
   weeklyActivities: number;
+  monthlyActivitySessions: number;
+  monthlyActivityCost: number;
+  activeActivities: number;
+  activityCostBreakdown: Array<{ name: string; cost: number }>;
   activityLoadByWeekday: number[]; // Mon..Sun
   nextActivities: Array<{ id: string; dateISO: string; label: string }>;
 
@@ -17,6 +21,7 @@ export type DashboardData = {
   closuresUpcoming: Array<{ dateISO: string; label: string }>;
 
   upcomingLeave: Array<{ id: string; member?: string | null; dateISO: string; label: string }>;
+  leaveBalances: Array<{ memberId: string; name: string; allowance: number; booked: number; remaining: number }>;
 };
 
 const toISODate = (d: Date) => d.toISOString().slice(0, 10);
@@ -78,6 +83,10 @@ function expandActivityDates(
   return result;
 }
 
+function monthsInclusive(start: Date, end: Date) {
+  return Math.max(1, (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth() + 1);
+}
+
 export async function getDashboardData(): Promise<DashboardData> {
   const householdId = await getHouseholdIdOrThrow();
 
@@ -95,21 +104,23 @@ export async function getDashboardData(): Promise<DashboardData> {
   const membersCount = await prisma.member.count({ where: { householdId } });
   const members = await prisma.member.findMany({
     where: { householdId },
-    select: { id: true, name: true, shortLabel: true },
+    select: { id: true, name: true, shortLabel: true, role: true },
   });
   const memberShort = new Map(
     members.map((m) => [m.id, (m.shortLabel || (m.name ? m.name.split(" ")[0] : "")) ?? ""])
   );
 
-  // ---- Activities snapshot (next 7 days via PlannerActivity) ----
+  // ---- Activities snapshot and current-month cost ----
   const windowLo = today;
   const windowHi = toDateOnlyUTC(addDays(today, 6));
+  const activityWindowLo = toDateOnlyUTC(monthStart) < windowLo ? toDateOnlyUTC(monthStart) : windowLo;
+  const activityWindowHi = toDateOnlyUTC(monthEnd) > windowHi ? toDateOnlyUTC(monthEnd) : windowHi;
 
   const planner = await prisma.plannerActivity.findMany({
     where: {
       householdId,
-      startDate: { lte: windowHi },
-      OR: [{ endDate: null }, { endDate: { gte: windowLo } }],
+      startDate: { lte: activityWindowHi },
+      OR: [{ endDate: null }, { endDate: { gte: activityWindowLo } }],
     },
     orderBy: { startDate: "asc" },
     select: {
@@ -120,6 +131,9 @@ export async function getDashboardData(): Promise<DashboardData> {
       recurrenceKind: true,
       daysOfWeek: true,
       intervalWeeks: true,
+      feeModel: true,
+      amount: true,
+      allocation: true,
       members: { select: { memberId: true } },
     },
   });
@@ -175,6 +189,34 @@ for (const a of planner) {
   occurrences.sort((a, b) => (a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : 0));
   const nextActivities = occurrences.slice(0, 8).map(({ id, dateISO, label }) => ({ id, dateISO, label }));
   const weeklyActivities = occurrences.length;
+  const currentMonthPlanner = planner.filter((activity) =>
+    activity.startDate <= monthEnd && (!activity.endDate || activity.endDate >= monthStart)
+  );
+  const activityCostBreakdown = currentMonthPlanner.map((activity) => {
+    const monthOccurrences = expandActivityDates(
+      {
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        recurrenceKind: activity.recurrenceKind as RecurrenceKind,
+        daysOfWeek: (activity.daysOfWeek ?? []) as number[],
+        intervalWeeks: activity.intervalWeeks,
+      },
+      toDateOnlyUTC(monthStart),
+      toDateOnlyUTC(monthEnd)
+    ).length;
+    const amount = Number(activity.amount ?? 0);
+    const startMonth = activity.startDate.getUTCFullYear() === now.getUTCFullYear() && activity.startDate.getUTCMonth() === now.getUTCMonth();
+    const cost = activity.feeModel === "per_session"
+      ? monthOccurrences * amount
+      : activity.feeModel === "monthly"
+        ? amount
+        : activity.feeModel === "one_off" || activity.allocation === "upfront" || !activity.endDate
+          ? (startMonth ? amount : 0)
+          : amount / monthsInclusive(activity.startDate, activity.endDate ?? activity.startDate);
+    return { name: activity.name, cost: Math.round(cost * 100) / 100, sessions: monthOccurrences };
+  }).filter((item) => item.cost > 0 || item.sessions > 0);
+  const monthlyActivitySessions = activityCostBreakdown.reduce((sum, item) => sum + item.sessions, 0);
+  const monthlyActivityCost = Math.round(activityCostBreakdown.reduce((sum, item) => sum + item.cost, 0) * 100) / 100;
 
   // ---- Closures (this month + upcoming) ----
   const closures = await prisma.schoolDay.findMany({
@@ -208,12 +250,52 @@ for (const a of planner) {
     dateISO: toISODate(l.startDate),
     label: l.type ?? "Leave",
   }));
+  const yearStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  const yearEnd = new Date(Date.UTC(now.getUTCFullYear(), 11, 31, 23, 59, 59));
+  const [parentPrefs, bookedLeave] = await Promise.all([
+    prisma.parentPrefs.findMany({
+      where: { memberId: { in: members.filter((member) => member.role === "parent").map((member) => member.id) } },
+    }),
+    prisma.leave.findMany({
+      where: {
+        householdId,
+        memberId: { not: null },
+        startDate: { lte: yearEnd },
+        endDate: { gte: yearStart },
+        type: { in: ["annual_auto", "annual_override"] },
+      },
+      select: { memberId: true, startDate: true, endDate: true },
+    }),
+  ]);
+  const allowanceByMember = new Map(parentPrefs.map((pref) => [pref.memberId, pref.allowanceDays]));
+  const bookedByMember = new Map<string, Set<string>>();
+  for (const item of bookedLeave) {
+    if (!item.memberId) continue;
+    const dates = bookedByMember.get(item.memberId) ?? new Set<string>();
+    for (let date = new Date(item.startDate); date <= item.endDate; date = addDays(date, 1)) {
+      const weekday = date.getUTCDay();
+      if (weekday !== 0 && weekday !== 6) dates.add(toISODate(date));
+    }
+    bookedByMember.set(item.memberId, dates);
+  }
+  const leaveBalances = members.filter((member) => member.role === "parent").map((member) => {
+    const allowance = allowanceByMember.get(member.id) ?? 20;
+    const booked = bookedByMember.get(member.id)?.size ?? 0;
+    return { memberId: member.id, name: member.name, allowance, booked, remaining: Math.max(0, allowance - booked) };
+  });
 
   return {
     householdName: (hh?.name ?? "Your Household"),
     membersCount,
 
     weeklyActivities,
+    monthlyActivitySessions,
+    monthlyActivityCost,
+    activeActivities: currentMonthPlanner.length,
+    activityCostBreakdown: activityCostBreakdown
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 5)
+      .map(({ name, cost }) => ({ name, cost })),
     activityLoadByWeekday,
     nextActivities,
 
@@ -222,5 +304,6 @@ for (const a of planner) {
     closuresUpcoming,
 
     upcomingLeave,
+    leaveBalances,
   };
 }
