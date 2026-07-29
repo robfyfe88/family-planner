@@ -686,6 +686,23 @@ input[type="text"].no-spinners {
 .debt-save-button { align-self: end; justify-content: center; height: 38px; }
 .editable-row.fixed-zero { border-color: #d9e4dc; background: #f8faf6; }
 .promo-date-field small { display: block; margin-top: .28rem; color: var(--money-mint-dark); font-size: .58rem; font-weight: 700; }
+.debt-forecast-details { grid-column: 1 / -1; margin-top: .05rem; border-top: 1px solid #ece9e1; }
+.debt-forecast-details > summary { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .65rem .15rem .05rem; cursor: pointer; list-style: none; }
+.debt-forecast-details > summary::-webkit-details-marker { display: none; }
+.debt-forecast-details > summary > span { display: flex; align-items: center; gap: .35rem; color: var(--money-mint-dark); font-size: .64rem; }
+.debt-forecast-details > summary svg { transition: transform .18s ease; }
+.debt-forecast-details[open] > summary svg { transform: rotate(90deg); }
+.debt-forecast-details > summary > strong { color: #64736e; font-size: .62rem; }
+.debt-forecast-table { max-height: 360px; margin-top: .55rem; overflow: auto; border: 1px solid #e7e5dc; border-radius: .7rem; background: #fff; }
+.debt-forecast-grid { display: grid; grid-template-columns: minmax(100px, 1.15fr) repeat(5, minmax(95px, 1fr)); min-width: 650px; border-top: 1px solid #efede6; }
+.debt-forecast-grid:first-child { border-top: 0; }
+.debt-forecast-grid > * { padding: .48rem .55rem; text-align: right; font-size: .6rem; font-variant-numeric: tabular-nums; }
+.debt-forecast-grid > *:first-child { text-align: left; }
+.debt-forecast-grid strong { color: var(--money-ink); }
+.debt-forecast-head { position: sticky; top: 0; z-index: 1; color: #71807a; background: #f3f6f2; }
+.debt-forecast-head span { font-size: .54rem; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; }
+.debt-forecast-grid .forecast-extra { color: #6d4f89; font-weight: 750; }
+.debt-forecast-empty { padding: .75rem; color: #7d8985; font-size: .62rem; }
 
 .row-order {
   display: grid;
@@ -1246,12 +1263,13 @@ input[type="text"].no-spinners {
 .commitment-group-icon svg { transition: transform .18s ease; }
 .commitment-group[open] .commitment-group-icon svg { transform: rotate(90deg); }
 .commitment-group-body { display: grid; gap: .4rem; padding: .5rem; border-top: 1px solid #ebe9e2; background: #fff; }
-.commitment-group-body > article { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, .45fr) minmax(130px, .3fr) auto; align-items: end; gap: .45rem; padding: .6rem; border: 1px solid #eceae3; border-radius: .65rem; background: #fafaf6; }
+.commitment-group-body > article { display: grid; grid-template-columns: minmax(165px, 1fr) minmax(145px, .55fr) minmax(115px, .38fr) minmax(125px, .42fr) auto auto; align-items: end; gap: .45rem; padding: .6rem; border: 1px solid #eceae3; border-radius: .65rem; background: #fafaf6; }
 .commitment-editor label > span { display: block; margin-bottom: .2rem; color: #7b8884; font-size: .54rem; font-weight: 650; }
 .commitment-editor label > input,
 .commitment-editor label > select { width: 100%; height: 36px; padding: 0 .45rem; border: 1px solid #dfe1da; border-radius: .5rem; background: #fff; font-size: .66rem; }
 .commitment-editor .currency-input { height: 36px; background: #fff; }
 .commitment-editor .icon-button { width: 36px; height: 36px; }
+.commitment-save-button { align-self: end; justify-content: center; height: 36px; }
 .commitment-editor .commitment-static { display: flex; align-items: center; justify-content: space-between; }
 .commitment-static span,
 .commitment-static b,
@@ -1386,6 +1404,7 @@ input[type="text"].no-spinners {
   .income-editor > article { grid-template-columns: minmax(160px, 1fr) minmax(125px, .7fr) minmax(125px, .7fr); }
   .income-editor .income-save-button { grid-column: 2; }
   .income-editor .icon-button { grid-column: 3; justify-self: end; }
+  .commitment-group-body > article { grid-template-columns: minmax(170px, 1fr) minmax(140px, .7fr) minmax(125px, .55fr); }
   .flex-allowance-editor article,
   .flex-allowance-editor article.rolling-pot-editor { grid-template-columns: minmax(180px, 1fr) minmax(125px, .45fr) minmax(125px, .45fr); }
   .flex-allowance-editor article .soft-button { grid-column: 3; }

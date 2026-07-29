@@ -61,22 +61,42 @@ const selectNumericValue = (event: React.FocusEvent<HTMLInputElement>) => event.
 const monthName = new Intl.DateTimeFormat("en-GB", { month: "long" }).format(new Date());
 const flexLabels = new Set(["unforeseen monthly costs", "joint family spending"]);
 
-function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
+type DebtForecastPayment = {
+  month: number;
+  opening: number;
+  interest: number;
+  minimum: number;
+  extra: number;
+  closing: number;
+};
+
+function buildDebtForecast(debts: Debt[], strategy: Strategy, extra: number) {
   const working = debts
     .filter((debt) => debt.balance > 0)
-    .map((debt) => ({ ...debt, original: debt.balance }));
+    .map((debt) => ({ ...debt }));
   const monthlyBudget = working.reduce((sum, debt) => sum + debt.minimum, 0) + Math.max(0, extra);
+  const byDebt: Record<string, DebtForecastPayment[]> = Object.fromEntries(debts.map((debt) => [debt.id, []]));
   let interest = 0;
   let months = 0;
   const cleared: Array<{ name: string; month: number }> = [];
 
   while (working.some((debt) => debt.balance > 0.005) && months < 600 && monthlyBudget > 0) {
     months += 1;
+    const paymentRows = new Map<string, DebtForecastPayment>();
     for (const debt of working) {
       if (debt.balance <= 0) continue;
+      const opening = debt.balance;
       const charged = debt.balance * (debt.apr / 100 / 12);
       debt.balance += charged;
       interest += charged;
+      paymentRows.set(debt.id, {
+        month: months - 1,
+        opening,
+        interest: charged,
+        minimum: 0,
+        extra: 0,
+        closing: debt.balance,
+      });
     }
 
     let remaining = monthlyBudget;
@@ -85,6 +105,8 @@ function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
       const payment = Math.min(debt.balance, debt.minimum, remaining);
       debt.balance -= payment;
       remaining -= payment;
+      const row = paymentRows.get(debt.id);
+      if (row) row.minimum = payment;
     }
 
     const ordered = orderDebts(working.filter(canReceiveOverpayment), strategy);
@@ -93,6 +115,19 @@ function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
       const payment = Math.min(debt.balance, remaining);
       debt.balance -= payment;
       remaining -= payment;
+      const row = paymentRows.get(debt.id);
+      if (row) row.extra += payment;
+    }
+
+    for (const debt of working) {
+      const row = paymentRows.get(debt.id);
+      if (!row) continue;
+      row.opening = roundMoney(row.opening);
+      row.interest = roundMoney(row.interest);
+      row.minimum = roundMoney(row.minimum);
+      row.extra = roundMoney(row.extra);
+      row.closing = roundMoney(Math.max(0, debt.balance));
+      byDebt[debt.id].push(row);
     }
 
     for (const debt of working) {
@@ -107,8 +142,19 @@ function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
     interest,
     monthlyBudget,
     cleared,
+    byDebt,
     possible: working.length === 0 || working.every((debt) => debt.balance <= 0.005),
   };
+}
+
+function calculatePayoff(debts: Debt[], strategy: Strategy, extra: number) {
+  return buildDebtForecast(debts, strategy, extra);
+}
+
+function forecastMonthLabel(monthIndex: number) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1 + monthIndex, 1)
+    .toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 }
 
 export default function FinanceHub() {
@@ -551,25 +597,54 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, sav
           <EmptyState icon={<Landmark />} title="No debts added" text="If you’re already debt free, brilliant. Otherwise add each balance to build your plan." />
         ) : (
           <div className="debt-list">
-            {orderDebts(debts, profile.strategy).map((debt, index) => (
-              <article className={`editable-row ${canReceiveOverpayment(debt) ? "" : "fixed-zero"}`} key={debt.id}>
-                <div className="row-order">{index + 1}</div>
-                <label><span>Name</span><input value={debt.name} onChange={(e) => update(debt.id, { name: e.target.value })} /></label>
-                <MoneyInput label="Balance" value={debt.balance} onChange={(balance) => update(debt.id, { balance })} />
-                <label><span>APR</span><div className="suffix-input"><input type="number" min="0" step=".01" value={debt.apr} onFocus={selectNumericValue} onChange={(e) => update(debt.id, { apr: number(e.target.value) })} /><b>%</b></div></label>
-                <MoneyInput label="Minimum" value={debt.minimum} onChange={(minimum) => update(debt.id, { minimum })} />
-                <label className="promo-date-field">
-                  <span>0% ends (optional)</span>
-                  <input type="date" value={debt.promotionalEndDate} onChange={(event) => update(debt.id, { promotionalEndDate: event.target.value })} />
-                  {debt.apr === 0 && !debt.promotionalEndDate && <small>Minimum only</small>}
-                </label>
-                <button className="soft-button debt-save-button" disabled={Boolean(savingDebtId)} onClick={() => persistDebt(debt)}>
-                  {savingDebtId === debt.id ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
-                  {savingDebtId === debt.id ? "Saving" : "Save"}
-                </button>
-                <button className="icon-button danger" onClick={() => onRemove(debt.id)} aria-label={`Remove ${debt.name}`}><Trash2 size={16} /></button>
-              </article>
-            ))}
+            {orderDebts(debts, profile.strategy).map((debt, index) => {
+              const schedule = payoff.byDebt[debt.id] || [];
+              const finalPayment = schedule[schedule.length - 1];
+              const clearLabel = finalPayment?.closing === 0
+                ? `Projected clear ${forecastMonthLabel(finalPayment.month)}`
+                : "No clearing date yet";
+              return (
+                <article className={`editable-row ${canReceiveOverpayment(debt) ? "" : "fixed-zero"}`} key={debt.id}>
+                  <div className="row-order">{index + 1}</div>
+                  <label><span>Name</span><input value={debt.name} onChange={(e) => update(debt.id, { name: e.target.value })} /></label>
+                  <MoneyInput label="Balance" value={debt.balance} onChange={(balance) => update(debt.id, { balance })} />
+                  <label><span>APR</span><div className="suffix-input"><input type="number" min="0" step=".01" value={debt.apr} onFocus={selectNumericValue} onChange={(e) => update(debt.id, { apr: number(e.target.value) })} /><b>%</b></div></label>
+                  <MoneyInput label="Minimum" value={debt.minimum} onChange={(minimum) => update(debt.id, { minimum })} />
+                  <label className="promo-date-field">
+                    <span>0% ends (optional)</span>
+                    <input type="date" value={debt.promotionalEndDate} onChange={(event) => update(debt.id, { promotionalEndDate: event.target.value })} />
+                    {debt.apr === 0 && !debt.promotionalEndDate && <small>Minimum only</small>}
+                  </label>
+                  <button className="soft-button debt-save-button" disabled={Boolean(savingDebtId)} onClick={() => persistDebt(debt)}>
+                    {savingDebtId === debt.id ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
+                    {savingDebtId === debt.id ? "Saving" : "Save"}
+                  </button>
+                  <button className="icon-button danger" onClick={() => onRemove(debt.id)} aria-label={`Remove ${debt.name}`}><Trash2 size={16} /></button>
+                  <details className="debt-forecast-details">
+                    <summary>
+                      <span><ChevronRight size={15} /><b>Month-by-month forecast</b></span>
+                      <strong>{clearLabel}</strong>
+                    </summary>
+                    <div className="debt-forecast-table">
+                      <div className="debt-forecast-grid debt-forecast-head">
+                        <span>Month</span><span>Opening</span><span>Interest</span><span>Minimum</span><span>Extra</span><span>Closing</span>
+                      </div>
+                      {schedule.map((payment) => (
+                        <div className="debt-forecast-grid" key={`${debt.id}-${payment.month}`}>
+                          <b>{forecastMonthLabel(payment.month)}</b>
+                          <span>{money(payment.opening)}</span>
+                          <span>{money(payment.interest)}</span>
+                          <span>−{money(payment.minimum)}</span>
+                          <span className={payment.extra > 0 ? "forecast-extra" : ""}>−{money(payment.extra)}</span>
+                          <strong>{money(payment.closing)}</strong>
+                        </div>
+                      ))}
+                      {schedule.length === 0 && <p className="debt-forecast-empty">Enter a balance and minimum payment to build this forecast.</p>}
+                    </div>
+                  </details>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

@@ -171,23 +171,32 @@ function projectDebtsForward(
   months: number
 ) {
   const working = debts.map((debt) => ({ ...debt }));
+  const monthlyDebtBudget = roundMoney(
+    working.reduce((sum, debt) => sum + debt.minimum, 0) + Math.max(0, monthlyExtra)
+  );
   for (let month = 0; month < months; month += 1) {
     working.forEach((debt) => {
       if (debt.balance <= 0) return;
       debt.balance = roundMoney(debt.balance + debt.balance * (debt.apr / 100 / 12));
-      debt.balance = roundMoney(Math.max(0, debt.balance - Math.min(debt.balance, debt.minimum)));
     });
 
-    let remainingExtra = Math.max(0, monthlyExtra);
+    let remainingBudget = monthlyDebtBudget;
+    working.forEach((debt) => {
+      if (debt.balance <= 0 || remainingBudget <= 0) return;
+      const payment = Math.min(debt.balance, debt.minimum, remainingBudget);
+      debt.balance = roundMoney(Math.max(0, debt.balance - payment));
+      remainingBudget = roundMoney(remainingBudget - payment);
+    });
+
     const ordered = orderDebts(
       working.filter((debt) => debt.balance > 0 && canReceiveOverpayment(debt)),
       strategy
     );
     ordered.forEach((debt) => {
-      if (remainingExtra <= 0) return;
-      const payment = Math.min(debt.balance, remainingExtra);
+      if (remainingBudget <= 0) return;
+      const payment = Math.min(debt.balance, remainingBudget);
       debt.balance = roundMoney(Math.max(0, debt.balance - payment));
-      remainingExtra = roundMoney(remainingExtra - payment);
+      remainingBudget = roundMoney(remainingBudget - payment);
     });
   }
 
@@ -221,6 +230,7 @@ export default function ModernMonthlyPlan({
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [savingIncomeId, setSavingIncomeId] = React.useState<string | null>(null);
+  const [savingCommitmentId, setSavingCommitmentId] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [categoryFilter, setCategoryFilter] = React.useState("all");
   const [reviewOnly, setReviewOnly] = React.useState(false);
@@ -530,28 +540,49 @@ export default function ModernMonthlyPlan({
   }
 
   async function persistCommitment(row: BudgetRow) {
-    if (!row.id || row.id.startsWith("activity:")) return;
-    const result = await saveCommitment({
-      id: row.id,
-      label: row.label,
-      amount: row.amount,
-      owner: row.owner,
-      year: fundedPlanYear,
-      month1to12: fundedPlanDate.getUTCMonth() + 1,
-      scope: "from-now-on",
-      expectedDay: row.expectedDay,
-      categoryName: row.categoryName || guessCommitmentCategory(row.label),
-    });
-    if (result.kind === "debt") {
-      await deleteBudgetRowScoped(row.id, "entire-range", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
-      setCommittedBills((items) => items.filter((item) => item.id !== row.id));
-      onFinanceChanged?.();
-      setToast(`${row.label} moved to Debt freedom.`);
-    } else {
-      onFinanceChanged?.();
-      setToast(`${row.label} updated.`);
+    if (!row.id || row.id.startsWith("activity:") || savingCommitmentId) return;
+    setSavingCommitmentId(row.id);
+    const usualAmount = row.usualAmount ?? row.amount;
+    const categoryName = row.categoryName || guessCommitmentCategory(row.label);
+    try {
+      const result = await saveCommitment({
+        id: row.id,
+        label: row.label,
+        amount: usualAmount,
+        owner: row.owner,
+        year: fundedPlanYear,
+        month1to12: fundedPlanDate.getUTCMonth() + 1,
+        scope: "from-now-on",
+        expectedDay: row.expectedDay,
+        categoryName,
+      });
+      if (result.kind === "debt") {
+        await deleteBudgetRowScoped(row.id, "entire-range", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
+        setCommittedBills((items) => items.filter((item) => item.id !== row.id));
+        onFinanceChanged?.();
+        setToast(`${row.label} moved to Debt freedom.`);
+      } else {
+        if (roundMoney(row.amount) !== roundMoney(usualAmount)) {
+          await upsertBudgetRowScoped("expense", {
+            id: result.row.id,
+            label: row.label,
+            amount: row.amount,
+            owner: row.owner,
+            year: fundedPlanYear,
+            month1to12: fundedPlanDate.getUTCMonth() + 1,
+            scope: "this-month",
+            categoryName,
+          });
+        }
+        onFinanceChanged?.();
+        setToast(`${row.label} saved · ${money(row.amount)} for ${fundedPlanMonth}, ${money(usualAmount)} usual target.`);
+      }
+      await load(true);
+    } catch {
+      setToast("That commitment did not save. Please try again.");
+    } finally {
+      setSavingCommitmentId(null);
     }
-    await load(true);
   }
 
   return (
@@ -739,21 +770,22 @@ export default function ModernMonthlyPlan({
                     <div className="commitment-group-body">
                       {group.items.map((bill) => (
                         <article key={bill.id || bill.label}>
-                          <label><span>Commitment</span><input value={bill.label} onChange={(event) => updateCommitment(bill.id, { label: event.target.value })} onBlur={() => persistCommitment(bill)} /></label>
+                          <label><span>Commitment</span><input value={bill.label} onChange={(event) => updateCommitment(bill.id, { label: event.target.value })} /></label>
                           <label>
                             <span>Category</span>
                             <select
                               value={COMMITMENT_CATEGORIES.includes(bill.categoryName as typeof COMMITMENT_CATEGORIES[number]) ? bill.categoryName : guessCommitmentCategory(bill.label)}
-                              onChange={(event) => {
-                                const next = { ...bill, categoryName: event.target.value };
-                                updateCommitment(bill.id, { categoryName: event.target.value });
-                                persistCommitment(next);
-                              }}
+                              onChange={(event) => updateCommitment(bill.id, { categoryName: event.target.value })}
                             >
                               {COMMITMENT_CATEGORIES.map((category) => <option value={category} key={category}>{category}</option>)}
                             </select>
                           </label>
-                          <label><span>Monthly amount</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onFocus={selectNumericValue} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} onBlur={() => persistCommitment(bill)} /></div></label>
+                          <label><span>{fundedPlanMonth} plan</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onFocus={selectNumericValue} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                          <label><span>Usual monthly target</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.usualAmount ?? bill.amount} onFocus={selectNumericValue} onChange={(event) => updateCommitment(bill.id, { usualAmount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                          <button className="soft-button commitment-save-button" disabled={Boolean(savingCommitmentId)} onClick={() => persistCommitment(bill)}>
+                            {savingCommitmentId === bill.id ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
+                            {savingCommitmentId === bill.id ? "Saving" : "Save"}
+                          </button>
                           <button className="icon-button danger" aria-label={`Remove ${bill.label}`} onClick={async () => {
                             if (!bill.id) return;
                             await deleteBudgetRowScoped(bill.id, "from-now-on", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
