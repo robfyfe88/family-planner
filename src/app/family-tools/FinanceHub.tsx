@@ -28,6 +28,7 @@ import {
   overpaymentCapacity,
 } from "@/lib/debt-plan";
 import {
+  fetchUnforeseenBuffer,
   fetchFreedomData,
   removeDebt,
   saveDebt,
@@ -55,6 +56,7 @@ const number = (value: string) => {
 };
 
 const roundMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+const selectNumericValue = (event: React.FocusEvent<HTMLInputElement>) => event.currentTarget.select();
 
 const monthName = new Intl.DateTimeFormat("en-GB", { month: "long" }).format(new Date());
 const flexLabels = new Set(["unforeseen monthly costs", "joint family spending"]);
@@ -132,16 +134,28 @@ export default function FinanceHub() {
     const now = new Date();
     const fundedPlanDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     try {
-      const [payBudget, fundedBudget, freedom] = await Promise.all([
+      const [payBudget, fundedBudget, freedom, unforeseenBuffer] = await Promise.all([
         fetchBudgetRowsForMonth(now.getFullYear(), now.getMonth() + 1),
         fetchBudgetRowsForMonth(fundedPlanDate.getFullYear(), fundedPlanDate.getMonth() + 1),
         fetchFreedomData(),
+        fetchUnforeseenBuffer(),
       ]);
+      const legacyUnforeseen = fundedBudget.expenses.find(
+        (row) => row.label.trim().toLowerCase() === "unforeseen monthly costs"
+      );
+      const unforeseenTarget = unforeseenBuffer.exists
+        ? unforeseenBuffer.target
+        : legacyUnforeseen?.amount ?? 0;
+      const unforeseenTopUp = Math.max(0, unforeseenTarget - unforeseenBuffer.balance);
+      const regularCosts = fundedBudget.expenses
+        .filter((row) => !flexLabels.has(row.label.trim().toLowerCase()))
+        .reduce((sum, row) => sum + row.amount, 0);
+      const jointSpending = fundedBudget.expenses
+        .filter((row) => row.label.trim().toLowerCase() === "joint family spending")
+        .reduce((sum, row) => sum + row.amount, 0);
       setIncome(payBudget.incomes.reduce((sum, row) => sum + row.amount, 0));
-      setExpenses(fundedBudget.expenses.reduce((sum, row) => sum + row.amount, 0));
-      setFlexibleCosts(fundedBudget.expenses
-        .filter((row) => flexLabels.has(row.label.trim().toLowerCase()))
-        .reduce((sum, row) => sum + row.amount, 0));
+      setExpenses(roundMoney(regularCosts + jointSpending + unforeseenTopUp));
+      setFlexibleCosts(roundMoney(jointSpending + unforeseenTopUp));
       setDebts(freedom.debts);
       setGoals(freedom.goals);
       setProfile(freedom.profile);
@@ -540,7 +554,7 @@ function DebtFreedom({ debts, setDebts, profile, updateProfile, persistDebt, sav
                 <div className="row-order">{index + 1}</div>
                 <label><span>Name</span><input value={debt.name} onChange={(e) => update(debt.id, { name: e.target.value })} /></label>
                 <MoneyInput label="Balance" value={debt.balance} onChange={(balance) => update(debt.id, { balance })} />
-                <label><span>APR</span><div className="suffix-input"><input type="number" min="0" step=".01" value={debt.apr} onChange={(e) => update(debt.id, { apr: number(e.target.value) })} /><b>%</b></div></label>
+                <label><span>APR</span><div className="suffix-input"><input type="number" min="0" step=".01" value={debt.apr} onFocus={selectNumericValue} onChange={(e) => update(debt.id, { apr: number(e.target.value) })} /><b>%</b></div></label>
                 <MoneyInput label="Minimum" value={debt.minimum} onChange={(minimum) => update(debt.id, { minimum })} />
                 <label className="promo-date-field">
                   <span>0% ends (optional)</span>
@@ -599,7 +613,7 @@ function EmergencySavings({ goal, profile, updateProfile, persistGoal, target, s
         </div>
         <div className="emergency-fields">
           <MoneyInput label="Emergency savings balance" value={saved} onChange={setSaved} onBlur={persistSaved} />
-          <label><span>Longer-term target</span><div className="suffix-input"><input type="number" min="1" max="6" value={profile.emergencyFundMonths} onChange={(event) => updateProfile({ emergencyFundMonths: number(event.target.value) })} /><b>months</b></div></label>
+          <label><span>Longer-term target</span><div className="suffix-input"><input type="number" min="1" max="6" value={profile.emergencyFundMonths} onFocus={selectNumericValue} onChange={(event) => updateProfile({ emergencyFundMonths: number(event.target.value) })} /><b>months</b></div></label>
         </div>
       </section>
 
@@ -622,7 +636,7 @@ function MoneyInput({ label, value, onChange, onBlur }: { label: string; value: 
   return (
     <label className="money-field">
       <span>{label}</span>
-      <div><b>£</b><input type="number" min="0" step=".01" value={value} onChange={(e) => onChange(number(e.target.value))} onBlur={onBlur} /></div>
+      <div><b>£</b><input type="number" min="0" step=".01" value={value} onFocus={selectNumericValue} onChange={(e) => onChange(number(e.target.value))} onBlur={onBlur} /></div>
     </label>
   );
 }

@@ -43,6 +43,10 @@ import {
   setTransactionCategory,
 } from "@/app/app/budget/workspace-actions";
 import {
+  fetchUnforeseenBuffer,
+  saveUnforeseenBuffer,
+} from "@/app/app/budget/freedom-actions";
+import {
   allocateDebtOverpayment,
   canReceiveOverpayment,
   orderDebts,
@@ -73,17 +77,15 @@ const money = (value: number, digits = 2) =>
   }).format(Number.isFinite(value) ? value : 0);
 
 const roundMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+const selectNumericValue = (event: React.FocusEvent<HTMLInputElement>) => event.currentTarget.select();
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
+const UNFORESEEN_LABEL = "Unforeseen monthly costs";
 const FLEX_ALLOWANCES = [
-  {
-    label: "Unforeseen monthly costs",
-    note: "Birthdays, family trips, school costs and the small surprises that appear most months.",
-  },
   {
     label: "Joint family spending",
     note: "Treats, days out and shared extras for the boys.",
@@ -91,6 +93,7 @@ const FLEX_ALLOWANCES = [
 ] as const;
 
 const isFlexAllowance = (label: string) =>
+  label.trim().toLowerCase() === UNFORESEEN_LABEL.toLowerCase() ||
   FLEX_ALLOWANCES.some((item) => item.label.toLowerCase() === label.trim().toLowerCase());
 
 const categoryTone = (name: string) => {
@@ -154,6 +157,8 @@ export default function ModernMonthlyPlan({
   const [incomeRows, setIncomeRows] = React.useState<BudgetRow[]>([]);
   const [committedBills, setCommittedBills] = React.useState<BudgetRow[]>([]);
   const [flexAllowances, setFlexAllowances] = React.useState<BudgetRow[]>([]);
+  const [unforeseenBuffer, setUnforeseenBuffer] = React.useState({ target: 0, balance: 0 });
+  const [savingBuffer, setSavingBuffer] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [savingIncomeId, setSavingIncomeId] = React.useState<string | null>(null);
@@ -169,10 +174,11 @@ export default function ModernMonthlyPlan({
       const fundedDate = new Date(Date.UTC(cursor.year, cursor.month, 1));
       const fundedYear = fundedDate.getUTCFullYear();
       const fundedMonth = fundedDate.getUTCMonth() + 1;
-      const [workspace, payBudget, fundedBudget] = await Promise.all([
+      const [workspace, payBudget, fundedBudget, savedBuffer] = await Promise.all([
         fetchMoneyWorkspace(cursor.year, cursor.month),
         fetchBudgetRowsForMonth(cursor.year, cursor.month),
         fetchBudgetRowsForMonth(fundedYear, fundedMonth),
+        fetchUnforeseenBuffer(),
       ]);
       setData(workspace);
       setPlannedIncome(payBudget.incomes.reduce((sum, item) => sum + item.amount, 0));
@@ -188,7 +194,23 @@ export default function ModernMonthlyPlan({
         };
       });
       setFlexAllowances(flexRows);
-      setPlannedExpenses(fundedBudget.expenses.reduce((sum, item) => sum + item.amount, 0));
+      const legacyUnforeseen = fundedBudget.expenses.find(
+        (item) => item.label.trim().toLowerCase() === UNFORESEEN_LABEL.toLowerCase()
+      );
+      const nextBuffer = {
+        target: savedBuffer.exists ? savedBuffer.target : legacyUnforeseen?.amount ?? 0,
+        balance: savedBuffer.balance,
+      };
+      const bufferTopUp = Math.max(0, nextBuffer.target - nextBuffer.balance);
+      const regularExpenses = fundedBudget.expenses
+        .filter((item) => !isFlexAllowance(item.label))
+        .reduce((sum, item) => sum + item.amount, 0);
+      setUnforeseenBuffer(nextBuffer);
+      setPlannedExpenses(roundMoney(
+        regularExpenses +
+        flexRows.reduce((sum, item) => sum + item.amount, 0) +
+        bufferTopUp
+      ));
       setCommittedBills(fundedBudget.expenses.filter((item) => !isFlexAllowance(item.label)));
     } catch {
       setToast("We couldn’t load this month. Please refresh and try again.");
@@ -254,7 +276,10 @@ export default function ModernMonthlyPlan({
 
   const debtMinimums = roundMoney(debts.reduce((sum, debt) => sum + debt.minimum, 0));
   const regularCommitmentTotal = roundMoney(committedBills.reduce((sum, item) => sum + item.amount, 0));
-  const flexAllowanceTotal = roundMoney(flexAllowances.reduce((sum, item) => sum + item.amount, 0));
+  const unforeseenTopUp = roundMoney(Math.max(0, unforeseenBuffer.target - unforeseenBuffer.balance));
+  const flexAllowanceTotal = roundMoney(
+    flexAllowances.reduce((sum, item) => sum + item.amount, 0) + unforeseenTopUp
+  );
   const coreOutgoings = roundMoney(plannedExpenses + debtMinimums);
   const availableToAssign = roundMoney(plannedIncome - coreOutgoings);
   const emergencyGoal = goals.find((goal) => /emergency|rainy day|buffer/i.test(goal.name));
@@ -351,8 +376,36 @@ export default function ModernMonthlyPlan({
     setFlexAllowances(next);
     setPlannedExpenses(roundMoney(
       committedBills.reduce((sum, item) => sum + item.amount, 0) +
-      next.reduce((sum, item) => sum + item.amount, 0)
+      next.reduce((sum, item) => sum + item.amount, 0) +
+      unforeseenTopUp
     ));
+  }
+
+  function updateUnforeseenBuffer(patch: Partial<typeof unforeseenBuffer>) {
+    const next = { ...unforeseenBuffer, ...patch };
+    next.balance = Math.min(next.target, next.balance);
+    setUnforeseenBuffer(next);
+    setPlannedExpenses(roundMoney(
+      committedBills.reduce((sum, item) => sum + item.amount, 0) +
+      flexAllowances.reduce((sum, item) => sum + item.amount, 0) +
+      Math.max(0, next.target - next.balance)
+    ));
+  }
+
+  async function persistUnforeseenBuffer() {
+    if (savingBuffer) return;
+    setSavingBuffer(true);
+    try {
+      const saved = await saveUnforeseenBuffer(unforeseenBuffer);
+      setUnforeseenBuffer(saved);
+      onFinanceChanged?.();
+      await load(true);
+      setToast(`Unforeseen costs buffer saved. This pay cycle will top it up by ${money(Math.max(0, saved.target - saved.balance))}.`);
+    } catch {
+      setToast("That buffer did not save. Please try again.");
+    } finally {
+      setSavingBuffer(false);
+    }
   }
 
   async function persistFlexAllowance(row: BudgetRow) {
@@ -391,7 +444,8 @@ export default function ModernMonthlyPlan({
     setCommittedBills(next);
     setPlannedExpenses(roundMoney(
       next.reduce((sum, item) => sum + item.amount, 0) +
-      flexAllowances.reduce((sum, item) => sum + item.amount, 0)
+      flexAllowances.reduce((sum, item) => sum + item.amount, 0) +
+      unforeseenTopUp
     ));
   }
 
@@ -556,8 +610,8 @@ export default function ModernMonthlyPlan({
                 {incomeRows.map((income) => (
                   <article key={income.id || income.label}>
                     <label><span>Income</span><input value={income.label} onChange={(event) => updateIncome(income.id, { label: event.target.value })} /></label>
-                    <label><span>{MONTHS[cursor.month - 1]} pay</span><div className="currency-input">£<input type="number" min="0" step=".01" value={income.amount} onChange={(event) => updateIncome(income.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
-                    <label><span>Usual monthly pay</span><div className="currency-input">£<input type="number" min="0" step=".01" value={income.usualAmount ?? income.amount} onChange={(event) => updateIncome(income.id, { usualAmount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                    <label><span>{MONTHS[cursor.month - 1]} pay</span><div className="currency-input">£<input type="number" min="0" step=".01" value={income.amount} onFocus={selectNumericValue} onChange={(event) => updateIncome(income.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                    <label><span>Usual monthly pay</span><div className="currency-input">£<input type="number" min="0" step=".01" value={income.usualAmount ?? income.amount} onFocus={selectNumericValue} onChange={(event) => updateIncome(income.id, { usualAmount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
                     <button className="soft-button income-save-button" disabled={Boolean(savingIncomeId)} onClick={() => persistIncome(income)}>
                       {savingIncomeId === income.id ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
                       {savingIncomeId === income.id ? "Saving" : "Save income"}
@@ -592,7 +646,7 @@ export default function ModernMonthlyPlan({
                 ) : (
                   <article key={bill.id || bill.label}>
                     <label><span>Commitment</span><input value={bill.label} onChange={(event) => updateCommitment(bill.id, { label: event.target.value })} onBlur={() => persistCommitment(bill)} /></label>
-                    <label><span>Monthly amount</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} onBlur={() => persistCommitment(bill)} /></div></label>
+                    <label><span>Monthly amount</span><div className="currency-input">£<input type="number" min="0" step=".01" value={bill.amount} onFocus={selectNumericValue} onChange={(event) => updateCommitment(bill.id, { amount: Math.max(0, Number(event.target.value) || 0) })} onBlur={() => persistCommitment(bill)} /></div></label>
                     <button className="icon-button danger" aria-label={`Remove ${bill.label}`} onClick={async () => {
                       if (!bill.id) return;
                       await deleteBudgetRowScoped(bill.id, "entire-range", fundedPlanYear, fundedPlanDate.getUTCMonth() + 1);
@@ -615,13 +669,26 @@ export default function ModernMonthlyPlan({
                 <p>Plan for the spending that is never truly random instead of taking it from savings later.</p>
               </div>
               <div className="flex-allowance-editor">
+                <article className="rolling-pot-editor">
+                  <span>
+                    <b>Unforeseen costs buffer</b>
+                    <small>Keep a set amount ready for birthdays, family trips, school costs and the surprises that crop up. Whatever is left rolls into the next pay cycle.</small>
+                  </span>
+                  <label><span>Keep available</span><div className="currency-input">£<input type="number" min="0" step=".01" value={unforeseenBuffer.target} onFocus={selectNumericValue} onChange={(event) => updateUnforeseenBuffer({ target: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                  <label><span>Left in pot now</span><div className="currency-input">£<input type="number" min="0" max={unforeseenBuffer.target} step=".01" value={unforeseenBuffer.balance} onFocus={selectNumericValue} onChange={(event) => updateUnforeseenBuffer({ balance: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                  <span className="pot-top-up"><small>Top up from this pay</small><strong>{money(unforeseenTopUp)}</strong></span>
+                  <button className="soft-button" disabled={savingBuffer} onClick={persistUnforeseenBuffer}>
+                    {savingBuffer ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
+                    {savingBuffer ? "Saving" : "Save buffer"}
+                  </button>
+                </article>
                 {flexAllowances.map((allowance) => {
                   const definition = FLEX_ALLOWANCES.find((item) => item.label === allowance.label);
                   return (
                     <article key={allowance.label}>
                       <span><b>{allowance.label}</b><small>{definition?.note}</small></span>
-                      <label><span>{fundedPlanMonth} plan</span><div className="currency-input">£<input type="number" min="0" step=".01" value={allowance.amount} onChange={(event) => updateFlexAllowance(allowance.label, { amount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
-                      <label><span>Usual monthly</span><div className="currency-input">£<input type="number" min="0" step=".01" value={allowance.usualAmount ?? allowance.amount} onChange={(event) => updateFlexAllowance(allowance.label, { usualAmount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                      <label><span>{fundedPlanMonth} plan</span><div className="currency-input">£<input type="number" min="0" step=".01" value={allowance.amount} onFocus={selectNumericValue} onChange={(event) => updateFlexAllowance(allowance.label, { amount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
+                      <label><span>Usual monthly</span><div className="currency-input">£<input type="number" min="0" step=".01" value={allowance.usualAmount ?? allowance.amount} onFocus={selectNumericValue} onChange={(event) => updateFlexAllowance(allowance.label, { usualAmount: Math.max(0, Number(event.target.value) || 0) })} /></div></label>
                       <button className="soft-button" onClick={() => persistFlexAllowance(allowance)}><Check size={15} /> Save</button>
                     </article>
                   );

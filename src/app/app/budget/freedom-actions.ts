@@ -4,6 +4,58 @@ import { prisma } from "@/lib/prisma";
 import { getHouseholdIdOrThrow } from "@/lib/household";
 
 const pence = (value: number) => Math.max(0, Math.round((Number(value) || 0) * 100));
+const UNFORESEEN_POT_NAME = "Unforeseen costs buffer";
+
+export async function fetchUnforeseenBuffer() {
+  const householdId = await getHouseholdIdOrThrow();
+  const pot = await prisma.savingsPot.findUnique({
+    where: {
+      householdId_name: {
+        householdId,
+        name: UNFORESEEN_POT_NAME,
+      },
+    },
+    select: {
+      targetPence: true,
+      balancePence: true,
+    },
+  });
+
+  return {
+    exists: Boolean(pot),
+    target: (pot?.targetPence ?? 0) / 100,
+    balance: (pot?.balancePence ?? 0) / 100,
+  };
+}
+
+export async function saveUnforeseenBuffer(input: { target: number; balance: number }) {
+  const householdId = await getHouseholdIdOrThrow();
+  const targetPence = pence(input.target);
+  const balancePence = Math.min(targetPence, pence(input.balance));
+  const saved = await prisma.savingsPot.upsert({
+    where: {
+      householdId_name: {
+        householdId,
+        name: UNFORESEEN_POT_NAME,
+      },
+    },
+    update: {
+      targetPence,
+      balancePence,
+    },
+    create: {
+      householdId,
+      name: UNFORESEEN_POT_NAME,
+      targetPence,
+      balancePence,
+    },
+  });
+
+  return {
+    target: (saved.targetPence ?? 0) / 100,
+    balance: saved.balancePence / 100,
+  };
+}
 
 export async function fetchFreedomData() {
   const householdId = await getHouseholdIdOrThrow();
